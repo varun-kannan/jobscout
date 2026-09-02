@@ -17,6 +17,7 @@ Runs entirely on your machine. One binary, one command, no account, no server.
 ## Quick start
 
 ```bash
+jobscout doctor        # check every requirement, report the gaps, change nothing
 jobscout init          # set up, verify, and repair — the only setup step
 jobscout run           # discover → enrich → match → score → draft
 jobscout review        # triage: approve or reject by keystroke
@@ -77,6 +78,7 @@ sales role at a payments company whose required skills match a payments engineer
 | | |
 |---|---|
 | `init` | Set up, verify, and repair. Idempotent — also the maintenance command. |
+| `doctor` | The same checks as `init`, reporting only. Exits non-zero if anything is wrong. |
 | `skills` | Show, edit, or re-extract your skill profile. `--gaps` for what you're missing. |
 | `discover` | Fetch new postings from every enabled engine, in parallel. |
 | `boards` | Find and manage the company boards the ATS engines poll. |

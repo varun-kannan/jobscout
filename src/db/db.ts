@@ -33,6 +33,21 @@ export async function openDb(path: string): Promise<DbHandle> {
   return { raw: db, close: () => db.close() };
 }
 
+/**
+ * Open an existing database without changing it in any way.
+ *
+ * `openDb` is not safe for a dry run: it creates missing directories, creates
+ * the file, and sets `journal_mode = WAL` — three writes before a single row
+ * is read. This opens read-only and never migrates, so a report can state the
+ * schema version without moving it.
+ *
+ * Throws if the file does not exist; callers check first.
+ */
+export function openReadOnly(path: string): DbHandle {
+  const db = new Database(path, { readonly: true });
+  return { raw: db, close: () => db.close() };
+}
+
 /** In-memory database, used by the test suite. WAL does not apply. */
 export function openMemoryDb(): DbHandle {
   const db = new Database(":memory:");

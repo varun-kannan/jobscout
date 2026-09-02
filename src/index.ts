@@ -9,6 +9,7 @@
 import { defineCommand, runMain } from "citty";
 import { guardAll } from "./cli/guard.ts";
 import { initCommand } from "./cli/init.ts";
+import { doctorCommand } from "./cli/doctor.ts";
 import { discoverCommand } from "./cli/discover.ts";
 import { skillsCommand } from "./cli/skills.ts";
 import { matchCommand } from "./cli/match.ts";
@@ -27,6 +28,7 @@ const main = defineCommand({
   },
   subCommands: guardAll({
     init: initCommand,
+    doctor: doctorCommand,
     discover: discoverCommand,
     boards: boardsCommand,
     skills: skillsCommand,

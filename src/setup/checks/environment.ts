@@ -3,8 +3,10 @@
  */
 
 import { access, constants, mkdir, stat } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { version as bunVersion } from "bun";
 import {
+  caution,
   pass,
   problem,
   type Check,
@@ -12,7 +14,7 @@ import {
   type CheckResult,
 } from "./check.ts";
 import { requiredDirs } from "../../config/paths.ts";
-import { openAndMigrate, currentVersion } from "../../db/db.ts";
+import { openAndMigrate, openReadOnly, currentVersion, SCHEMA_VERSION } from "../../db/db.ts";
 
 export const platformCheck: Check = {
   id: "platform",
@@ -87,6 +89,29 @@ export const databaseCheck: Check = {
       await stat(ctx.paths.root);
     } catch {
       return problem("waiting on the data directory");
+    }
+
+    // A dry run reports; it does not repair. Opening the normal way would
+    // create the file and set journal_mode before reading anything, so
+    // `doctor` would quietly bring into being the database it is checking for.
+    if (ctx.dryRun) {
+      if (!existsSync(ctx.paths.db)) {
+        return problem("not created yet", {
+          detail: ["`jobscout init` creates it."],
+        });
+      }
+      try {
+        const handle = openReadOnly(ctx.paths.db);
+        ctx.setDb(handle);
+        const version = currentVersion(handle.raw);
+        return version < SCHEMA_VERSION
+          ? caution(`schema v${version} — init would migrate to v${SCHEMA_VERSION}`)
+          : pass(`schema v${version}`);
+      } catch (err) {
+        return problem("could not open the database", {
+          detail: [String(err instanceof Error ? err.message : err), `Database path: ${ctx.paths.db}`],
+        });
+      }
     }
 
     try {

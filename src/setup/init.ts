@@ -39,6 +39,13 @@ export interface InitOptions {
   all: boolean;
   /** Set up without Claude Code; discovery, matching and ranking still work. */
   noAi: boolean;
+  /**
+   * What the run calls itself. `doctor` reports and stops; `init` repairs.
+   * They share this function so there is only ever one definition of "ready" —
+   * a separate implementation would drift, and then one would call an install
+   * healthy while the other called it broken.
+   */
+  label?: "init" | "doctor";
 }
 
 export interface InitOutcome {
@@ -81,7 +88,7 @@ async function askYesNo(question: string, defaultYes: boolean, assumeYes: boolea
 export async function runInit(options: InitOptions): Promise<InitOutcome> {
   const paths: Paths = getPaths(options.root);
 
-  intro(c.bold("jobscout init"));
+  intro(c.bold(`jobscout ${options.label ?? "init"}`));
 
   // The data directory has to exist before config can be read from it, and
   // creating an empty directory is harmless even in a dry run.
@@ -246,7 +253,18 @@ export async function runInit(options: InitOptions): Promise<InitOutcome> {
   };
 
   if (options.dryRun) {
-    outro(c.dim("Dry run — nothing was changed."));
+    if (options.label === "doctor") {
+      if (failures === 0 && warnings === 0) {
+        outro(c.green("Ready.") + c.dim("  Nothing to fix."));
+      } else {
+        const parts: string[] = [];
+        if (failures > 0) parts.push(`${failures} problem${failures === 1 ? "" : "s"}`);
+        if (warnings > 0) parts.push(`${warnings} warning${warnings === 1 ? "" : "s"}`);
+        outro(c.yellow(parts.join(" · ")) + c.dim("  Run `jobscout init` to fix."));
+      }
+    } else {
+      outro(c.dim("Dry run — nothing was changed."));
+    }
     return outcome;
   }
 
