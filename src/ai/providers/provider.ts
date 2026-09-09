@@ -7,7 +7,7 @@
  * over one derived from a price table.
  */
 
-import type { ZodType } from "zod";
+import { z, type ZodType } from "zod";
 import type { AiProvider } from "../../config/schema.ts";
 
 export interface AskInput<T> {
@@ -134,4 +134,21 @@ export async function commandExists(binary: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/**
+ * A JSON Schema every provider will accept.
+ *
+ * Zod stamps `$schema: "https://json-schema.org/draft/2020-12/schema"` on what
+ * it generates. Claude Code resolves that URL against its own registry and
+ * rejects the entire schema when it is not found —
+ *   `--json-schema is not a valid JSON Schema: no schema with key or ref ...`
+ * — which disabled every AI stage on the default backend while the schemas
+ * themselves were perfectly valid. Dropping the annotation costs nothing: it
+ * declares a dialect, and none of the providers need it stated.
+ */
+export function jsonSchemaFor(schema: ZodType): Record<string, unknown> {
+  const generated = z.toJSONSchema(schema) as Record<string, unknown>;
+  const { $schema: _dialect, ...rest } = generated;
+  return rest;
 }

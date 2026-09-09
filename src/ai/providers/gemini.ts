@@ -14,8 +14,7 @@ import {
   validate,
   type AiProviderClient,
   type AskInput,
-  type AskResult,
-} from "./provider.ts";
+  type AskResult, jsonSchemaFor } from "./provider.ts";
 
 interface GeminiResponse {
   candidates?: Array<{
@@ -54,7 +53,7 @@ export class GeminiClient implements AiProviderClient {
   }
 
   async ask<T>(input: AskInput<T>): Promise<AskResult<T>> {
-    const schema = toGeminiSchema(z.toJSONSchema(input.schema as ZodType));
+    const schema = toGeminiSchema(jsonSchemaFor(input.schema as ZodType));
     const url =
       `https://generativelanguage.googleapis.com/v1beta/models/` +
       `${encodeURIComponent(input.model)}:generateContent`;

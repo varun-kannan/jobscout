@@ -23,8 +23,7 @@ import {
   validate,
   type AiProviderClient,
   type AskInput,
-  type AskResult,
-} from "./provider.ts";
+  type AskResult, jsonSchemaFor } from "./provider.ts";
 
 interface CliSpec {
   id: AiProvider;
@@ -72,7 +71,7 @@ export class AgentCliClient implements AiProviderClient {
   }
 
   async ask<T>(input: AskInput<T>): Promise<AskResult<T>> {
-    const schema = z.toJSONSchema(input.schema as ZodType);
+    const schema = jsonSchemaFor(input.schema as ZodType);
 
     // With no schema flag available, the shape has to be requested in the
     // prompt and enforced on the way back.

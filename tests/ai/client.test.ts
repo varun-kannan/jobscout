@@ -41,9 +41,14 @@ describe("provider chain", () => {
     handle.close();
   });
 
+  /**
+   * Only keyless API providers are used here. Naming an agent CLI would make
+   * the result depend on whether the machine running the tests happens to have
+   * it installed — and a jobscout developer usually does, so the assertion
+   * passed only where Claude Code was absent.
+   */
   test("a chain of unavailable providers reports unavailable, not an error", async () => {
-    // Neither CLI is installed here, and no key is set.
-    const { ai, handle } = client({ providers: ["claude-code", "gemini-cli", "openai"] });
+    const { ai, handle } = client({ providers: ["openai", "anthropic", "gemini"] });
     expect(await ai.available()).toBe(false);
     handle.close();
   });

@@ -15,8 +15,7 @@ import {
   validate,
   type AiProviderClient,
   type AskInput,
-  type AskResult,
-} from "./provider.ts";
+  type AskResult, jsonSchemaFor } from "./provider.ts";
 
 /* ── Claude Code ──────────────────────────────────────────────────── */
 
@@ -46,7 +45,7 @@ export class ClaudeCodeClient implements AiProviderClient {
   }
 
   async ask<T>(input: AskInput<T>): Promise<AskResult<T>> {
-    const schema = z.toJSONSchema(input.schema as ZodType);
+    const schema = jsonSchemaFor(input.schema as ZodType);
 
     const args = [
       "-p",
@@ -119,7 +118,7 @@ export class AnthropicClient implements AiProviderClient {
   }
 
   async ask<T>(input: AskInput<T>): Promise<AskResult<T>> {
-    const schema = z.toJSONSchema(input.schema as ZodType);
+    const schema = jsonSchemaFor(input.schema as ZodType);
 
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",

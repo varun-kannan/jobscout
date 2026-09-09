@@ -17,8 +17,7 @@ import {
   validate,
   type AiProviderClient,
   type AskInput,
-  type AskResult,
-} from "./provider.ts";
+  type AskResult, jsonSchemaFor } from "./provider.ts";
 
 const DEFAULT_HOST = "http://127.0.0.1:11434";
 
@@ -49,7 +48,7 @@ export class OllamaClient implements AiProviderClient {
   }
 
   async ask<T>(input: AskInput<T>): Promise<AskResult<T>> {
-    const schema = z.toJSONSchema(input.schema as ZodType);
+    const schema = jsonSchemaFor(input.schema as ZodType);
 
     const response = await fetch(`${this.host}/api/chat`, {
       method: "POST",

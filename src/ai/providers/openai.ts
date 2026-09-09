@@ -15,8 +15,7 @@ import {
   validate,
   type AiProviderClient,
   type AskInput,
-  type AskResult,
-} from "./provider.ts";
+  type AskResult, jsonSchemaFor } from "./provider.ts";
 
 interface OpenAiResponse {
   choices?: Array<{ message?: { content?: string; refusal?: string } }>;
@@ -56,7 +55,7 @@ export class OpenAiClient implements AiProviderClient {
   }
 
   async ask<T>(input: AskInput<T>): Promise<AskResult<T>> {
-    const schema = strictify(z.toJSONSchema(input.schema as ZodType));
+    const schema = strictify(jsonSchemaFor(input.schema as ZodType));
 
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
