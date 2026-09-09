@@ -19,7 +19,7 @@ Runs entirely on your machine. One binary, one command, no account, no server.
 ```bash
 jobscout doctor        # check every requirement, report the gaps, change nothing
 jobscout init          # set up, verify, and repair — the only setup step
-jobscout run           # discover → enrich → match → score → draft
+jobscout run           # discover → enrich → match → score → signals → draft
 jobscout review        # triage: approve or reject by keystroke
 jobscout prepare       # finalise approved jobs into the outbox
 jobscout apply         # opens each one, cover letter on your clipboard — you submit
@@ -67,9 +67,45 @@ Because it is arithmetic, the ordering is **reproducible**, **explainable**, and
 posting gets measured rather than sampled.
 
 Two details worth knowing. Scores are smoothed by how much was asked, so a posting listing one
-requirement you happen to match does not outrank one listing eleven where you match nine. And the AI
+requirement you happen to match does not outrank one listing fourteen where you match eight — the
+smoothing constant has to exceed 2 for that to hold, and a real run with it set to exactly 2 put a
+Motion Designer above a senior backend role. And the AI
 score sits *alongside* the count, never replacing it — it catches what counting cannot, such as a
 sales role at a payments company whose required skills match a payments engineer almost perfectly.
+
+---
+
+## What you're looking for
+
+`init` asks for these, and `discover` passes them straight to every engine. They are not cosmetic:
+with none set, no engine has an opinion and everything is kept — a first run returns a few thousand
+postings spanning every country and every function.
+
+```toml
+[search]
+roles       = [ "backend engineer", "payments engineer" ]
+locations   = [ "Chennai" ]
+remoteOnly  = false
+salaryMin   = 2400000        # your floor, in the currency below
+salaryCurrency = "INR"
+```
+
+`jobscout signals` then reads each shortlisted posting for the things a skill count cannot see:
+
+```
+☺2  Postman         Head of Financial Services      pay below · 4 red flags
+☺4  tezvyn          Principal Backend Engineer      remote restricted
+```
+
+Pay and remote status are settled arithmetically, because they are stated facts. **Currencies are
+never converted** — a posting quoted in USD against an INR floor reads `unknown`, not a guess made
+with an invented exchange rate. Only the reading of tone is asked of a model, and every point it
+makes has to quote the posting verbatim, so a claim can always be checked against the source:
+
+```
+[negative] "flexible PTO"                    → no stated minimum
+[negative] "We are in office 5 days a week"
+```
 
 ---
 
@@ -85,13 +121,14 @@ sales role at a payments company whose required skills match a payments engineer
 | `enrich` | Fetch full descriptions for truncated postings. |
 | `match` | Rank postings by skill overlap. |
 | `score` | AI second opinion on what skill counts can't see. |
+| `signals` | Pay against your floor, whether remote means remote, and what the wording suggests about working there. |
 | `draft` | Cover letter, screening answers, and a list of gaps. |
 | `review` | Full-screen triage. |
 | `prepare` | Finalise approved jobs into the outbox. |
 | `apply` | Open each job and stage its materials. You submit. |
 | `status` | Pipeline, application lifecycle, staleness, engine health, AI spend. |
 | `config` | Show or change the provider chain, per-task models, and spend limit. |
-| `run` | discover → enrich → match → score → draft, in one go. |
+| `run` | discover → enrich → match → score → signals → draft, in one go. |
 
 ---
 
