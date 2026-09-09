@@ -214,6 +214,33 @@ export async function extractJobSkills(
   return summary;
 }
 
+/**
+ * Apply the shared "worth a second opinion" filter, narrowed to one place when
+ * asked.
+ *
+ * Both AI stages work down from the highest match score, which is right until
+ * you care about somewhere specific: a city's postings can rank below hundreds
+ * of others and never be reached at all.
+ */
+function locationFiltered<T>(
+  db: Database,
+  select: string,
+  options: { threshold: number; limit?: number; location?: string },
+): T[] {
+  const limit = options.limit ?? 40;
+  const place = options.location?.trim();
+  const order = ` ORDER BY m.match_score DESC LIMIT ?`;
+
+  if (!place) {
+    return db.query<T, [number, number]>(select + order).all(options.threshold, limit);
+  }
+  // Matched loosely: a posting writes "Chennai, Tamil Nadu, India" and nobody
+  // types that.
+  return db
+    .query<T, [number, string, number]>(`${select} AND j.location LIKE ?${order}`)
+    .all(options.threshold, `%${place}%`, limit);
+}
+
 /* ── score ────────────────────────────────────────────────────────── */
 
 interface ScoreRow extends JobRow {
@@ -226,21 +253,23 @@ interface ScoreRow extends JobRow {
 export async function scoreJobs(
   db: Database,
   ai: AiClient,
-  options: { threshold: number; limit?: number; profileSummary: string },
+  options: { threshold: number; limit?: number; profileSummary: string; location?: string },
 ): Promise<StageSummary> {
   // Only jobs the arithmetic already rates worth a second opinion. Scoring
   // everything would spend most of the calls on roles you will never see.
-  const jobs = db
-    .query<ScoreRow, [number, number]>(
-      `SELECT j.id, j.company, j.title, j.location, j.description,
-              m.matched, m.missing, m.bonus, m.coverage
-       FROM jobs j JOIN matches m ON m.job_id = j.id
-       WHERE m.match_score >= ? AND j.canonical_id IS NULL
-         AND NOT EXISTS (SELECT 1 FROM scores s WHERE s.job_id = j.id)
-       ORDER BY m.match_score DESC
-       LIMIT ?`,
-    )
-    .all(options.threshold, options.limit ?? 40);
+  //
+  // The location filter exists because ranking alone cannot reach a shortlist
+  // you care about: postings in your city sat below three hundred others, so
+  // scoring "the top 40" never touched a single one of them.
+  const jobs = locationFiltered<ScoreRow>(
+    db,
+    `SELECT j.id, j.company, j.title, j.location, j.description,
+            m.matched, m.missing, m.bonus, m.coverage
+     FROM jobs j JOIN matches m ON m.job_id = j.id
+     WHERE m.match_score >= ? AND j.canonical_id IS NULL
+       AND NOT EXISTS (SELECT 1 FROM scores s WHERE s.job_id = j.id)`,
+    options,
+  );
 
   const summary = emptySummary(jobs.length);
   if (jobs.length === 0) return summary;
@@ -336,20 +365,18 @@ interface SignalRow extends JobRow {
 export async function computeSignals(
   db: Database,
   ai: AiClient,
-  options: { threshold: number; limit?: number; target: PayTarget },
+  options: { threshold: number; limit?: number; target: PayTarget; location?: string },
 ): Promise<StageSummary> {
-  const jobs = db
-    .query<SignalRow, [number, number]>(
-      `SELECT j.id, j.company, j.title, j.location, j.description,
-              j.salary_min, j.salary_max, j.salary_currency, j.salary_period,
-              j.remote, j.remote_restriction
-       FROM jobs j JOIN matches m ON m.job_id = j.id
-       WHERE m.match_score >= ? AND j.canonical_id IS NULL
-         AND NOT EXISTS (SELECT 1 FROM signals s WHERE s.job_id = j.id)
-       ORDER BY m.match_score DESC
-       LIMIT ?`,
-    )
-    .all(options.threshold, options.limit ?? 40);
+  const jobs = locationFiltered<SignalRow>(
+    db,
+    `SELECT j.id, j.company, j.title, j.location, j.description,
+            j.salary_min, j.salary_max, j.salary_currency, j.salary_period,
+            j.remote, j.remote_restriction
+     FROM jobs j JOIN matches m ON m.job_id = j.id
+     WHERE m.match_score >= ? AND j.canonical_id IS NULL
+       AND NOT EXISTS (SELECT 1 FROM signals s WHERE s.job_id = j.id)`,
+    options,
+  );
 
   const summary = emptySummary(jobs.length);
   if (jobs.length === 0) return summary;

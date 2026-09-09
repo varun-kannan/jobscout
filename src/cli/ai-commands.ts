@@ -135,6 +135,7 @@ export const scoreCommand = defineCommand({
   meta: { name: "score", description: "AI second opinion on what skill counts can't see" },
   args: {
     limit: { type: "string", description: "How many to score (default 40)" },
+    location: { type: "string", description: "Only postings whose location contains this" },
     root: { type: "string", description: "Data directory" },
   },
 
@@ -150,6 +151,7 @@ export const scoreCommand = defineCommand({
         threshold: config.match.threshold,
         limit: Number(args.limit ?? 40),
         profileSummary: profileSummary(db),
+        location: args.location as string | undefined,
       });
       report("scored", summary);
 
@@ -196,6 +198,7 @@ export const signalsCommand = defineCommand({
   },
   args: {
     limit: { type: "string", description: "How many to read (default 40)" },
+    location: { type: "string", description: "Only postings whose location contains this" },
     root: { type: "string", description: "Data directory" },
   },
 
@@ -215,6 +218,7 @@ export const signalsCommand = defineCommand({
           salaryCurrency: config.search.salaryCurrency,
           salaryPeriod: config.search.salaryPeriod,
         },
+        location: args.location as string | undefined,
       });
       report("read", summary);
 
