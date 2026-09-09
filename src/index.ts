@@ -13,7 +13,13 @@ import { doctorCommand } from "./cli/doctor.ts";
 import { discoverCommand } from "./cli/discover.ts";
 import { skillsCommand } from "./cli/skills.ts";
 import { matchCommand } from "./cli/match.ts";
-import { draftCommand, enrichCommand, runCommand, scoreCommand } from "./cli/ai-commands.ts";
+import {
+  draftCommand,
+  enrichCommand,
+  runCommand,
+  scoreCommand,
+  signalsCommand,
+} from "./cli/ai-commands.ts";
 import { reviewCommand } from "./cli/review.ts";
 import { prepareCommand, statusCommand } from "./cli/status.ts";
 import { applyCommand } from "./cli/apply.ts";
@@ -35,6 +41,7 @@ const main = defineCommand({
     match: matchCommand,
     enrich: enrichCommand,
     score: scoreCommand,
+    signals: signalsCommand,
     draft: draftCommand,
     review: reviewCommand,
     prepare: prepareCommand,

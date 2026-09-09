@@ -18,8 +18,15 @@ import {
   jobSkillsSchema,
   normaliseSchema,
   scoreSchema,
+  signalsSchema,
   type Draft,
 } from "./schemas.ts";
+import {
+  remoteReality,
+  salaryState,
+  salaryVsTarget,
+  type PayTarget,
+} from "../signals/compute.ts";
 import { AliasResolver } from "../skills/aliases.ts";
 import { labelOf } from "../skills/canonical.ts";
 
@@ -27,6 +34,7 @@ import normalisePrompt from "./prompts/normalise.md" with { type: "text" };
 import extractSkillsPrompt from "./prompts/extract-skills.md" with { type: "text" };
 import scorePrompt from "./prompts/score.md" with { type: "text" };
 import draftPrompt from "./prompts/draft.md" with { type: "text" };
+import signalsPrompt from "./prompts/signals.md" with { type: "text" };
 
 export interface StageSummary {
   considered: number;
@@ -296,6 +304,138 @@ export async function scoreJobs(
       summary.succeeded++;
     } catch (err) {
       if (err instanceof NoAiError) throw err;
+      note(summary, job.id, err);
+    }
+  }
+
+  return summary;
+}
+
+/* ── signals ──────────────────────────────────────────────────────── */
+
+interface SignalRow extends JobRow {
+  salary_min: number | null;
+  salary_max: number | null;
+  salary_currency: string | null;
+  salary_period: string | null;
+  remote: number | null;
+  remote_restriction: string | null;
+}
+
+/**
+ * What a posting suggests about working there.
+ *
+ * Pay and remote status are settled arithmetically — they are stated facts, and
+ * asking a model to compare two numbers invites it to be wrong about one. Only
+ * the reading of tone is asked for, and every point it makes has to quote the
+ * posting, so a claim can always be checked against the source.
+ *
+ * A model failure costs the judgement, not the row: the arithmetic is written
+ * either way, because a salary comparison is still useful without a tone score.
+ */
+export async function computeSignals(
+  db: Database,
+  ai: AiClient,
+  options: { threshold: number; limit?: number; target: PayTarget },
+): Promise<StageSummary> {
+  const jobs = db
+    .query<SignalRow, [number, number]>(
+      `SELECT j.id, j.company, j.title, j.location, j.description,
+              j.salary_min, j.salary_max, j.salary_currency, j.salary_period,
+              j.remote, j.remote_restriction
+       FROM jobs j JOIN matches m ON m.job_id = j.id
+       WHERE m.match_score >= ? AND j.canonical_id IS NULL
+         AND NOT EXISTS (SELECT 1 FROM signals s WHERE s.job_id = j.id)
+       ORDER BY m.match_score DESC
+       LIMIT ?`,
+    )
+    .all(options.threshold, options.limit ?? 40);
+
+  const summary = emptySummary(jobs.length);
+  if (jobs.length === 0) return summary;
+
+  ai.authoriseStage({ calls: jobs.length, averageChars: averageLength(jobs), tier: "judge" });
+
+  const insert = db.prepare(`
+    INSERT INTO signals (job_id, salary_state, salary_vs_target, wlb_score, wlb_evidence,
+                         red_flags, green_flags, remote_reality, interview_stages,
+                         repost_count, computed_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(job_id) DO UPDATE SET
+      salary_state = excluded.salary_state, salary_vs_target = excluded.salary_vs_target,
+      wlb_score = excluded.wlb_score, wlb_evidence = excluded.wlb_evidence,
+      red_flags = excluded.red_flags, green_flags = excluded.green_flags,
+      remote_reality = excluded.remote_reality, interview_stages = excluded.interview_stages,
+      repost_count = excluded.repost_count, computed_at = excluded.computed_at
+  `);
+
+  // A role posted over and over is worth knowing about: it usually means the
+  // last several hires did not stay, or the req is never actually filled.
+  const reposts = db.prepare<{ n: number }, [string, string]>(
+    `SELECT COUNT(*) AS n FROM jobs WHERE company = ? AND title = ?`,
+  );
+
+  for (const job of jobs) {
+    const pay = {
+      salaryMin: job.salary_min,
+      salaryMax: job.salary_max,
+      salaryCurrency: job.salary_currency,
+      salaryPeriod: job.salary_period,
+    };
+    const arithmetic = {
+      salaryState: salaryState(pay),
+      salaryVsTarget: salaryVsTarget(pay, options.target),
+      remoteReality: remoteReality({
+        remote: job.remote === null ? null : job.remote === 1,
+        remoteRestriction: job.remote_restriction,
+      }),
+      repostCount: reposts.get(job.company, job.title)?.n ?? 1,
+    };
+
+    try {
+      const result = await ai.ask({
+        instruction: signalsPrompt,
+        context: [
+          `POSTING: ${job.title} at ${job.company} (${job.location})`,
+          ``,
+          job.description.slice(0, 12_000),
+        ].join("\n"),
+        schema: signalsSchema,
+        tier: "judge",
+        stage: "signals",
+      });
+
+      insert.run(
+        job.id,
+        arithmetic.salaryState,
+        arithmetic.salaryVsTarget,
+        result.wlbScore,
+        JSON.stringify(result.evidence),
+        JSON.stringify(result.redFlags),
+        JSON.stringify(result.greenFlags),
+        arithmetic.remoteReality,
+        result.interviewStages,
+        arithmetic.repostCount,
+        new Date().toISOString(),
+      );
+      summary.succeeded++;
+    } catch (err) {
+      if (err instanceof NoAiError) throw err;
+      // The arithmetic still holds without a tone score, and a salary
+      // comparison is worth keeping on its own.
+      insert.run(
+        job.id,
+        arithmetic.salaryState,
+        arithmetic.salaryVsTarget,
+        null,
+        "[]",
+        "[]",
+        "[]",
+        arithmetic.remoteReality,
+        null,
+        arithmetic.repostCount,
+        new Date().toISOString(),
+      );
       note(summary, job.id, err);
     }
   }

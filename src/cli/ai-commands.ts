@@ -7,7 +7,9 @@ import { openAndMigrate, type DbHandle } from "../db/db.ts";
 import { BudgetExceededError, createAiClient, NoAiError, type AiClient } from "../ai/client.ts";
 import { formatUsd } from "../ai/pricing.ts";
 import { periodResets, spendSince, periodStart } from "../ai/budget.ts";
-import { draftFor, extractJobSkills, normaliseJobs, scoreJobs, type StageSummary } from "../ai/stages.ts";
+import { draftFor, extractJobSkills, normaliseJobs, scoreJobs, type StageSummary,
+  computeSignals,
+} from "../ai/stages.ts";
 import { enrichSnippets } from "../pipeline/enrich.ts";
 import { createHttpClient } from "../engines/http.ts";
 import { loadProfile } from "../skills/profile.ts";
@@ -185,6 +187,95 @@ export const scoreCommand = defineCommand({
   },
 });
 
+/* ── signals ──────────────────────────────────────────────────────── */
+
+export const signalsCommand = defineCommand({
+  meta: {
+    name: "signals",
+    description: "What a posting suggests about pay, remote reality, and working there",
+  },
+  args: {
+    limit: { type: "string", description: "How many to read (default 40)" },
+    root: { type: "string", description: "Data directory" },
+  },
+
+  async run({ args }) {
+    const { config, db, ai } = await open(args.root as string | undefined);
+    try {
+      if (!(await requireAi(ai))) {
+        process.exitCode = 1;
+        return;
+      }
+      line();
+      const summary = await computeSignals(db.raw, ai, {
+        threshold: config.match.threshold,
+        limit: Number(args.limit ?? 40),
+        target: {
+          salaryMin: config.search.salaryMin,
+          salaryCurrency: config.search.salaryCurrency,
+          salaryPeriod: config.search.salaryPeriod,
+        },
+      });
+      report("read", summary);
+
+      if (config.search.salaryMin === null) {
+        line();
+        line(
+          hint("  No salary floor set, so pay is recorded but not compared. Set one with `jobscout init`."),
+        );
+      }
+
+      const rows = db.raw
+        .query<
+          {
+            company: string; title: string; wlb_score: number | null;
+            salary_vs_target: string; remote_reality: string;
+            red_flags: string; repost_count: number;
+          },
+          []
+        >(
+          `SELECT j.company, j.title, s.wlb_score, s.salary_vs_target,
+                  s.remote_reality, s.red_flags, s.repost_count
+           FROM signals s JOIN jobs j ON j.id = s.job_id
+           ORDER BY s.wlb_score DESC NULLS LAST, s.computed_at DESC LIMIT 10`,
+        )
+        .all();
+
+      if (rows.length) {
+        line();
+        for (const r of rows) {
+          const flags = (JSON.parse(r.red_flags) as string[]).length;
+          const notes = [
+            r.salary_vs_target === "unknown" ? "" : `pay ${r.salary_vs_target}`,
+            r.remote_reality === "restricted" ? "remote restricted" : "",
+            flags ? `${flags} red flag${flags === 1 ? "" : "s"}` : "",
+            r.repost_count > 2 ? `reposted ${r.repost_count}x` : "",
+          ].filter(Boolean);
+          line(
+            `  ${c.bold(r.wlb_score === null ? " –" : "☺" + r.wlb_score)} ` +
+              `${pad(r.company.slice(0, 16), 17)}${pad(r.title.slice(0, 32), 33)}` +
+              c.dim(notes.join(" · ")),
+          );
+        }
+      }
+      line();
+    } catch (err) {
+      if (err instanceof BudgetExceededError) {
+        reportBudgetStop(err);
+        return;
+      }
+      if (err instanceof NoAiError) {
+        line(warn(err.message));
+        process.exitCode = 1;
+        return;
+      }
+      throw err;
+    } finally {
+      db.close();
+    }
+  },
+});
+
 /* ── draft ────────────────────────────────────────────────────────── */
 
 async function readIfPresent(path: string): Promise<string> {
@@ -318,7 +409,7 @@ export const draftCommand = defineCommand({
 /* ── run ──────────────────────────────────────────────────────────── */
 
 export const runCommand = defineCommand({
-  meta: { name: "run", description: "discover → enrich → match → score → draft, in one go" },
+  meta: { name: "run", description: "discover → enrich → match → score → signals → draft, in one go" },
   args: {
     draft: { type: "boolean", description: "Also draft (--no-draft stops after scoring)", default: true },
     root: { type: "string", description: "Data directory" },
@@ -362,6 +453,21 @@ export const runCommand = defineCommand({
             threshold: config.match.threshold,
             limit: 40,
             profileSummary: profileSummary(db),
+          }),
+        );
+
+        line();
+        line(c.dim("Reading signals…"));
+        report(
+          "signals",
+          await computeSignals(db.raw, ai, {
+            threshold: config.match.threshold,
+            limit: 40,
+            target: {
+              salaryMin: config.search.salaryMin,
+              salaryCurrency: config.search.salaryCurrency,
+              salaryPeriod: config.search.salaryPeriod,
+            },
           }),
         );
       }
