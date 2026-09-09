@@ -239,3 +239,42 @@ describe("explainMatch", () => {
     expect(explainMatch(score([held("go")], []))).toBe("no requirements listed");
   });
 });
+
+describe("evidence smoothing", () => {
+  const letters = "abcdefghijklmnopqrst".split("");
+
+  /** matched of total, using distinct throwaway slugs. */
+  function coverage(matched: number, total: number) {
+    const wanted = letters.slice(0, total);
+    return score(
+      wanted.slice(0, matched).map((slug) => held(slug)),
+      wanted.map((slug) => wants(slug)),
+    );
+  }
+
+  /**
+   * The smoothing constant was 2, which is exactly the tie point here:
+   * 2/(2+2) and 8/(14+2) are both 0.500. Solving 8/(14+k) > 2/(2+k) gives
+   * k > 2, so at 2 the domain and seniority weights decided it — and on a real
+   * run a Motion Designer outranked a senior backend role because of it.
+   */
+  test("a thorough match beats a thin one on the same weights", () => {
+    const thin = coverage(2, 2);
+    const thorough = coverage(8, 14);
+    expect(thin.coverage).toBe(1);
+    expect(thorough.coverage).toBeLessThan(1);
+    // Despite the thin one being a "perfect" 100% by raw count.
+    expect(thorough.matchScore).toBeGreaterThan(thin.matchScore);
+  });
+
+  test("a perfect match on one requirement stays firmly below a real one", () => {
+    expect(coverage(9, 11).matchScore).toBeGreaterThan(coverage(1, 1).matchScore);
+    expect(coverage(3, 3).matchScore).toBeGreaterThan(coverage(1, 1).matchScore);
+  });
+
+  /** More evidence at the same ratio should always be worth more. */
+  test("at equal ratio, more evidence scores higher", () => {
+    expect(coverage(10, 10).matchScore).toBeGreaterThan(coverage(2, 2).matchScore);
+    expect(coverage(6, 12).matchScore).toBeGreaterThan(coverage(1, 2).matchScore);
+  });
+});

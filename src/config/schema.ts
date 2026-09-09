@@ -121,7 +121,10 @@ const matchSchema = z
     preferredCoverage: z.number().min(0).max(1).default(0.2),
     seniorityFit: z.number().min(0).max(1).default(0.15),
     domainAffinity: z.number().min(0).max(1).default(0.05),
-    threshold: z.number().min(0).max(1).default(0.5),
+    // Calibrated against EVIDENCE_SMOOTHING in skills/match.ts. Raising that
+    // constant lowers every score, so the two move together: at 0.5 a freshly
+    // installed jobscout sent almost nothing for a second opinion.
+    threshold: z.number().min(0).max(1).default(0.35),
   })
   .refine(
     (w) => {

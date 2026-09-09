@@ -110,14 +110,25 @@ const MISS_WEIGHT = 1.0;
  * one approach its true ratio, so the score reflects both *how well* you match
  * and *how much was asked*:
  *
- *     1 of 1   → 0.33      3 of 3   → 0.60
- *     9 of 11  → 0.69     11 of 11  → 0.85
+ *     1 of 1   → 0.20      3 of 3   → 0.43
+ *     8 of 14  → 0.44     11 of 11  → 0.73
  *
  * The effect is strongest where evidence is thinnest, which is where it should
  * be. It is not a penalty for short postings; it is a refusal to be confident
  * about them.
+ *
+ * The constant was 2, which is exactly the tie point for the commonest case:
+ *
+ *     2 of 2   → 2/(2+2) = 0.500
+ *     8 of 14  → 8/(14+2) = 0.500
+ *
+ * Solving 8/(14+k) > 2/(2+k) gives 16+8k > 28+2k, so k must exceed 2 for the
+ * thorough posting to win at all. At 2 a two-line posting quoting two words you
+ * happen to know tied with one listing fourteen requirements you meet eight of,
+ * and the domain and seniority weights then decided it — which is how a Motion
+ * Designer outranked a senior backend role on a real run.
  */
-const EVIDENCE_SMOOTHING = 2;
+const EVIDENCE_SMOOTHING = 4;
 
 export const DEFAULT_WEIGHTS: MatchWeights = {
   requiredCoverage: 0.6,
