@@ -9,6 +9,8 @@
  */
 
 import { readFile, stat, writeFile } from "node:fs/promises";
+import { openInEditor, describePlan } from "../editor.ts";
+import { hint, indent, line } from "../../output/theme.ts";
 import {
   caution,
   pass,
@@ -158,8 +160,14 @@ function templateCheck(opts: {
           fix: {
             label: "Open it in your editor now?",
             defaultYes: true,
-            manual: true,
-            instructions: [`    $EDITOR ${path}`, "Then re-run `jobscout init`."],
+            // Actually opens it. This used to print a literal `$EDITOR <path>`,
+            // which does nothing on a machine where $EDITOR is unset — the
+            // default on macOS — while the prompt promised to open the file.
+            async run() {
+              const plan = await openInEditor(path);
+              line(indent(hint(describePlan(plan, path)), 6));
+              if (plan) line(indent(hint("Then re-run `jobscout init`."), 6));
+            },
           },
         });
       }
