@@ -38,9 +38,23 @@ From source:
 
 ```bash
 bun install
-bun run src/index.ts init
-bun run build          # → dist/jobscout, a standalone binary
+bun run build                 # → dist/jobscout, a standalone binary
+bun run src/index.ts init     # offers to put `jobscout` on your PATH
 ```
+
+`bun run build` writes the binary but does **not** install it — until `init` links
+it onto your PATH, `jobscout` is not yet a command and every example above fails
+with `command not found`. `init` detects this, names the directory it would link
+into, and asks. Nothing needing a password is ever run for you.
+
+To skip that and do it by hand:
+
+```bash
+ln -s "$PWD/dist/jobscout" /opt/homebrew/bin/jobscout   # or any dir on your PATH
+```
+
+A symlink rather than a copy, so a later `bun run build` updates the command in
+place instead of leaving a stale binary that looks current.
 
 ---
 

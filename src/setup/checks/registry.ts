@@ -8,6 +8,7 @@
 
 import type { Check } from "./check.ts";
 import { environmentChecks } from "./environment.ts";
+import { onPathCheck } from "./on-path.ts";
 import { aiBackendCheck } from "./ai-backend.ts";
 import { profileChecks } from "./resume.ts";
 import { preferencesCheck } from "./preferences.ts";
@@ -15,6 +16,7 @@ import { engineChecks } from "./engines.ts";
 
 export const ALL_CHECKS: Check[] = [
   ...environmentChecks,
+  onPathCheck,
   aiBackendCheck,
   preferencesCheck,
   ...profileChecks,
