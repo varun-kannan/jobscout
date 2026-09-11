@@ -89,7 +89,12 @@ describe("migrations", () => {
     const result = migrate(handle.raw);
     expect(result.from).toBe(1);
     expect(result.to).toBe(SCHEMA_VERSION);
-    expect(result.applied.map((m) => m.name)).toEqual(["signals", "skill-source", "ai-spend"]);
+    // Derived rather than listed: the claim is "every step above the current
+    // version runs, in order", which is what a new migration must not break.
+    // Hardcoding the names made adding one fail this test for no real reason.
+    expect(result.applied.map((m) => m.name)).toEqual(
+      MIGRATIONS.filter((m) => m.version > first.version).map((m) => m.name),
+    );
 
     const after = tablesIn(handle);
     for (const table of declaredTables()) expect(after).toContain(table);

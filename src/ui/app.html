@@ -208,6 +208,37 @@
   dl.cfg dt { color: var(--faint); }
   dl.cfg dd { margin: 0; overflow-wrap: anywhere; }
 
+  /* ── tracker ──────────────────────────────────────────────── */
+  #track-badge { margin-left: 6px; font-size: 11px; color: var(--faint); }
+  nav button[aria-current="true"] #track-badge { color: var(--invert-ink); opacity: .7; }
+  .track-bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 18px; }
+  .seg { display: inline-flex; border: 1px solid var(--line-strong); border-radius: 7px; overflow: hidden; }
+  .seg button {
+    font: inherit; font-size: 12px; padding: 5px 11px; border: 0; border-right: 1px solid var(--line);
+    background: var(--bg); color: var(--muted); cursor: pointer;
+  }
+  .seg button:last-child { border-right: 0; }
+  .seg button:hover { background: var(--hover); color: var(--ink); }
+  .seg button[aria-pressed="true"] { background: var(--invert-bg); color: var(--invert-ink); }
+  .seg button b { font-weight: 600; }
+  table.track { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.track th {
+    text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: .08em;
+    color: var(--faint); font-weight: 500; padding: 8px 10px; border-bottom: 1px solid var(--line-strong);
+  }
+  table.track td { padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  table.track tr.stale { box-shadow: inset 2px 0 0 var(--ink); }
+  table.track select, table.track input {
+    font: inherit; font-size: 12px; padding: 4px 7px; border: 1px solid var(--line-strong);
+    border-radius: 5px; background: var(--bg); color: var(--ink); width: 100%;
+  }
+  table.track .co { font-weight: 600; }
+  table.track .sub { color: var(--faint); font-size: 12px; }
+  .aged { font-variant-numeric: tabular-nums; color: var(--faint); }
+  .aged.warn { color: var(--ink); font-weight: 600; }
+  .link { background: none; border: 0; color: var(--muted); cursor: pointer; font: inherit; font-size: 12px; padding: 2px 4px; }
+  .link:hover { color: var(--ink); text-decoration: underline; }
+
   /* ── résumé drop zone ─────────────────────────────────────── */
   .drop {
     border: 1.5px dashed var(--line-strong); border-radius: 10px;
@@ -233,6 +264,7 @@
   <div class="brand">jobscout<span id="subtitle">loading…</span></div>
   <nav>
     <button data-view="jobs" aria-current="true">Jobs</button>
+    <button data-view="track">Tracker<span id="track-badge"></span></button>
     <button data-view="dash">Dashboard</button>
     <button data-view="setup">Setup</button>
   </nav>
@@ -263,12 +295,24 @@
       </select>
       <label><input type="checkbox" id="f-remote"> Remote</label>
       <span class="count num" id="count"></span>
+      <span class="count" style="margin-left:10px">j/k move · a approve · r reject · o open · / search</span>
     </div>
     <div class="split">
       <div class="list" id="list"></div>
       <div class="detail" id="detail">
         <div class="empty">Select a role to read the full posting.</div>
       </div>
+    </div>
+  </div>
+
+  <div class="view pad" id="view-track" hidden>
+    <div class="track-bar">
+      <div class="seg" id="track-filters"></div>
+      <a class="btn" href="/api/tracker.csv" download style="margin-left:auto">Export CSV</a>
+    </div>
+    <div class="wide"><table class="track" id="track-table"></table></div>
+    <div class="empty" id="track-empty" hidden>
+      Nothing tracked yet. Open a posting in Jobs and it appears here as <b>viewed</b>.
     </div>
   </div>
 
@@ -312,7 +356,8 @@ document.querySelectorAll("nav button").forEach((btn) => {
   btn.addEventListener("click", () => {
     document.querySelectorAll("nav button").forEach((b) =>
       b.setAttribute("aria-current", String(b === btn)));
-    for (const v of ["jobs", "dash", "setup"]) $("view-" + v).hidden = v !== btn.dataset.view;
+    for (const v of ["jobs", "track", "dash", "setup"]) $("view-" + v).hidden = v !== btn.dataset.view;
+    if (btn.dataset.view === "track") loadTracker();
     if (btn.dataset.view === "dash") loadDashboard();
     if (btn.dataset.view === "setup") loadSetup();
   });
@@ -427,6 +472,7 @@ async function selectJob(id) {
       ${j.applyUrl ? `<a class="btn solid" href="${esc(j.applyUrl)}" target="_blank" rel="noreferrer noopener">Open posting ↗</a>` : ""}
       <button class="btn" data-decide="approved" aria-pressed="${j.reviewStatus === "approved"}">Approve</button>
       <button class="btn" data-decide="rejected" aria-pressed="${j.reviewStatus === "rejected"}">Reject</button>
+      <button class="btn" data-track="submitted">Mark applied</button>
       ${j.reviewStatus === "approved" || j.reviewStatus === "rejected"
         ? '<button class="btn" data-decide="new">Undo</button>' : ""}
     </div>
@@ -441,6 +487,17 @@ async function selectJob(id) {
     ${evidence ? `<section class="block"><h3>In their words</h3>${evidence}</section>` : ""}
     <section class="block"><h3>Full posting${j.descriptionComplete ? "" : " · truncated"}</h3>
       <div class="desc">${esc(j.description) || "No description was fetched."}</div></section>`;
+
+  const applied = $("detail").querySelector("[data-track]");
+  if (applied) applied.addEventListener("click", async () => {
+    await fetch("/api/tracker/" + encodeURIComponent(id), {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ status: applied.dataset.track }),
+    });
+    applied.textContent = "Applied ✓";
+    applied.setAttribute("aria-pressed", "true");
+    loadJobs();
+  });
 
   $("detail").querySelectorAll("[data-decide]").forEach((btn) =>
     btn.addEventListener("click", async () => {
@@ -477,6 +534,75 @@ async function loadDashboard() {
       <td class="num">${e.jobs.toLocaleString()}</td>
       <td style="color:var(--faint)">${esc((e.lastRun || "").replace("T", " ").slice(0, 16) || "—")}</td>
     </tr>`).join("") + "</tbody>";
+}
+
+/* ── tracker ────────────────────────────────────────────── */
+const track = { status: "", statuses: [], counts: {} };
+
+/** Only the statuses that mean the ball is in their court can go stale. */
+function agedCell(a) {
+  const cls = a.stale ? "aged warn" : "aged";
+  const label = a.daysSince === 0 ? "today" : a.daysSince + "d";
+  return `<span class="${cls}">${label}${a.stale ? " · quiet" : ""}</span>`;
+}
+
+async function loadTracker() {
+  const p = new URLSearchParams();
+  if (track.status) p.set("status", track.status);
+  const d = await (await fetch("/api/tracker?" + p)).json();
+  track.statuses = d.statuses;
+  track.counts = d.counts;
+
+  const total = Object.values(d.counts).reduce((a, b) => a + b, 0);
+  $("track-badge").textContent = total ? total : "";
+
+  $("track-filters").innerHTML =
+    `<button data-status="" aria-pressed="${track.status === ""}">All <b>${total}</b></button>` +
+    d.statuses.map((st) => `<button data-status="${st}" aria-pressed="${track.status === st}">
+      ${st} <b>${d.counts[st] || 0}</b></button>`).join("");
+  $("track-filters").querySelectorAll("button").forEach((b) =>
+    b.addEventListener("click", () => { track.status = b.dataset.status; loadTracker(); }));
+
+  $("track-empty").hidden = d.applications.length > 0;
+  $("track-table").innerHTML = d.applications.length === 0 ? "" :
+    `<thead><tr><th>Role</th><th style="width:150px">Status</th><th style="width:78px">Idle</th>
+      <th style="width:240px">Note</th><th style="width:96px"></th></tr></thead><tbody>` +
+    d.applications.map((a) => `<tr class="${a.stale ? "stale" : ""}" data-id="${esc(a.jobId)}">
+      <td>
+        <div class="co">${esc(a.company)}</div>
+        <div class="sub">${esc(a.title)}</div>
+        <div class="sub">${esc(a.location || "—")}${a.submittedAt
+          ? " · applied " + esc(a.submittedAt.slice(0, 10)) : ""}</div>
+      </td>
+      <td><select data-act="status">${track.statuses.map((st) =>
+        `<option value="${st}" ${st === a.status ? "selected" : ""}>${st}</option>`).join("")}</select></td>
+      <td>${agedCell(a)}</td>
+      <td><input data-act="note" value="${esc(a.note || "")}" placeholder="Add a note…"></td>
+      <td style="text-align:right">
+        ${a.applyUrl ? `<a class="link" href="${esc(a.applyUrl)}" target="_blank" rel="noreferrer noopener">open ↗</a>` : ""}
+        <button class="link" data-act="remove">remove</button>
+      </td>
+    </tr>`).join("") + "</tbody>";
+
+  $("track-table").querySelectorAll("tr[data-id]").forEach((tr) => {
+    const id = tr.dataset.id;
+    const send = (patch) => fetch("/api/tracker/" + encodeURIComponent(id), {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify(patch),
+    });
+    tr.querySelector('[data-act="status"]').addEventListener("change", async (e) => {
+      await send({ status: e.target.value });
+      loadTracker();
+    });
+    const note = tr.querySelector('[data-act="note"]');
+    // On blur rather than every keystroke: a note is finished when you leave it.
+    note.addEventListener("blur", () => send({ note: note.value }));
+    note.addEventListener("keydown", (e) => { if (e.key === "Enter") note.blur(); });
+    tr.querySelector('[data-act="remove"]').addEventListener("click", async () => {
+      await fetch("/api/tracker/" + encodeURIComponent(id), { method: "DELETE" });
+      loadTracker();
+    });
+  });
 }
 
 /* ── résumé upload ──────────────────────────────────────── */
@@ -570,6 +696,57 @@ async function loadSetup() {
       <dt>Résumé file</dt><dd>${esc(c.profile.resumeFile || "not set")}</dd>
     </dl></section>`;
 }
+
+/* ── keyboard ───────────────────────────────────────────
+ * Triaging thousands of rows with a mouse is the slow path. These only fire
+ * when you are not typing into something, so `a` in a search box is still an
+ * `a`.
+ */
+function typing(el) {
+  return el && (el.tagName === "INPUT" || el.tagName === "SELECT" ||
+                el.tagName === "TEXTAREA" || el.isContentEditable);
+}
+
+function move(delta) {
+  const rows = [...$("list").querySelectorAll(".row")];
+  if (!rows.length) return;
+  const at = rows.findIndex((r) => r.dataset.id === state.selected);
+  const next = rows[Math.min(Math.max(at + delta, 0), rows.length - 1)] ?? rows[0];
+  next.scrollIntoView({ block: "nearest" });
+  selectJob(next.dataset.id);
+}
+
+async function decide(status) {
+  if (!state.selected) return;
+  await fetch(`/api/jobs/${encodeURIComponent(state.selected)}/decision`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ status }),
+  });
+  const keep = state.selected;
+  await loadJobs();
+  await selectJob(keep);
+}
+
+document.addEventListener("keydown", (e) => {
+  if (typing(document.activeElement) || e.metaKey || e.ctrlKey || e.altKey) return;
+  if ($("view-jobs").hidden) return;
+  const keys = {
+    j: () => move(1),
+    k: () => move(-1),
+    ArrowDown: () => move(1),
+    ArrowUp: () => move(-1),
+    a: () => decide("approved"),
+    r: () => decide("rejected"),
+    u: () => decide("new"),
+    "/": () => $("f-q").focus(),
+    o: () => {
+      const link = $("detail").querySelector("a.btn.solid");
+      if (link) window.open(link.href, "_blank", "noreferrer");
+    },
+  };
+  const fn = keys[e.key];
+  if (fn) { e.preventDefault(); fn(); }
+});
 
 (async function start() {
   const d = await (await fetch("/api/dashboard")).json();

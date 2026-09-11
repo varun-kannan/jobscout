@@ -27,6 +27,16 @@ jobscout status        # where everything stands, and what has gone quiet
 jobscout ui            # browse, read and triage in your browser
 ```
 
+The UI has four views: **Jobs** (browse, filter, read, triage), **Tracker**
+(every application through `viewed → applied → interviewing → offer / rejected`,
+with notes, idle-day counts and CSV export), **Dashboard** (pipeline, scoring
+coverage, engine health, spend) and **Setup** (drag a résumé in to re-extract
+your skills).
+
+In Jobs, `j`/`k` move, `a` approves, `r` rejects, `o` opens the posting and `/`
+focuses search — a posting you open is recorded as **viewed**, so the tracker
+answers "what have I actually looked at", not only "what did I submit".
+
 `ui` serves the same database on loopback only — no account, no cloud, nothing
 leaves the machine. Use it to read a full posting, sort and filter thousands of
 rows, and approve or reject; `review` stays in the terminal for fast keyboard
@@ -147,7 +157,7 @@ makes has to quote the posting verbatim, so a claim can always be checked agains
 | `prepare` | Finalise approved jobs into the outbox. |
 | `apply` | Open each job and stage its materials. You submit. |
 | `status` | Pipeline, application lifecycle, staleness, engine health, AI spend. |
-| `ui` | Local web UI: browse, filter, read full postings, triage. Loopback only. |
+| `ui` | Local web UI: browse, filter, read full postings, triage, track applications. Loopback only. |
 | `config` | Show or change the provider chain, per-task models, and spend limit. |
 | `run` | discover → enrich → match → score → signals → draft, in one go. |
 

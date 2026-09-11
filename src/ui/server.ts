@@ -19,6 +19,15 @@ import { saveConfig } from "../config/load.ts";
 import { extractResume, resumeHeader, ResumeError } from "../profile/resume.ts";
 import { buildProfile, loadProfile } from "../skills/profile.ts";
 import {
+  listTracked,
+  markViewed,
+  trackedAsCsv,
+  trackerCounts,
+  untrack,
+  updateTracked,
+} from "./tracker.ts";
+import { APPLICATION_STATUSES } from "../db/applications.ts";
+import {
   countJobs,
   dashboard,
   facets,
@@ -167,8 +176,13 @@ export function createServer(options: UiOptions): { url: string; stop(): void } 
 
       const detail = pathname.match(/^\/api\/jobs\/([^/]+)$/);
       if (detail) {
-        const job = getJob(db, decodeURIComponent(detail[1]!));
-        return job ? json(job) : json({ error: "No such job" }, 404);
+        const id = decodeURIComponent(detail[1]!);
+        const job = getJob(db, id);
+        if (!job) return json({ error: "No such job" }, 404);
+        // Opening a posting is what "viewed" means. Only ever creates a row, so
+        // re-reading something you already applied to does not undo it.
+        markViewed(db, id);
+        return json(job);
       }
 
       const decide = pathname.match(/^\/api\/jobs\/([^/]+)\/decision$/);
@@ -187,6 +201,49 @@ export function createServer(options: UiOptions): { url: string; stop(): void } 
         if (!getJob(db, id)) return json({ error: "No such job" }, 404);
         setStatus.run(status, id);
         return json({ id, status });
+      }
+
+      if (pathname === "/api/tracker") {
+        const status = url.searchParams.get("status") ?? undefined;
+        const stale = Number(url.searchParams.get("staleAfterDays") ?? 14);
+        return json({
+          statuses: APPLICATION_STATUSES,
+          counts: trackerCounts(db),
+          applications: listTracked(db, {
+            status,
+            staleAfterDays: Number.isFinite(stale) ? stale : 14,
+          }),
+        });
+      }
+
+      if (pathname === "/api/tracker.csv") {
+        return new Response(trackedAsCsv(listTracked(db)), {
+          headers: {
+            "content-type": "text/csv; charset=utf-8",
+            "content-disposition": 'attachment; filename="jobscout-applications.csv"',
+          },
+        });
+      }
+
+      const track = pathname.match(/^\/api\/tracker\/([^/]+)$/);
+      if (track) {
+        const id = decodeURIComponent(track[1]!);
+        if (request.method === "POST" || request.method === "PATCH") {
+          let body: { status?: unknown; note?: unknown };
+          try {
+            body = (await request.json()) as { status?: unknown; note?: unknown };
+          } catch {
+            return json({ error: "Body must be JSON" }, 400);
+          }
+          const result = updateTracked(db, id, body);
+          if (!result.ok) return json({ error: result.error }, result.error === "No such job" ? 404 : 400);
+          return json({ ok: true, applications: listTracked(db), counts: trackerCounts(db) });
+        }
+        if (request.method === "DELETE") {
+          return untrack(db, id)
+            ? json({ ok: true, counts: trackerCounts(db) })
+            : json({ error: "Not tracked" }, 404);
+        }
       }
 
       if (pathname === "/api/profile") {

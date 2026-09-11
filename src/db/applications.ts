@@ -10,11 +10,15 @@
 import type { Database } from "bun:sqlite";
 
 export const APPLICATION_STATUSES = [
+  // Ordered as the lifecycle actually runs, so a picker reads top to bottom.
+  "viewed",
   "prepared",
   "submitted",
   "responded",
   "interviewing",
   "offer",
+  // Their decision, as distinct from yours or the calendar's.
+  "rejected",
   "closed",
   "ghosted",
 ] as const;
