@@ -24,7 +24,13 @@ jobscout review        # triage: approve or reject by keystroke
 jobscout prepare       # finalise approved jobs into the outbox
 jobscout apply         # opens each one, cover letter on your clipboard — you submit
 jobscout status        # where everything stands, and what has gone quiet
+jobscout ui            # browse, read and triage in your browser
 ```
+
+`ui` serves the same database on loopback only — no account, no cloud, nothing
+leaves the machine. Use it to read a full posting, sort and filter thousands of
+rows, and approve or reject; `review` stays in the terminal for fast keyboard
+triage. Both write the same decisions.
 
 Settings you change often have a command; everything else lives in `config.toml`:
 
@@ -141,6 +147,7 @@ makes has to quote the posting verbatim, so a claim can always be checked agains
 | `prepare` | Finalise approved jobs into the outbox. |
 | `apply` | Open each job and stage its materials. You submit. |
 | `status` | Pipeline, application lifecycle, staleness, engine health, AI spend. |
+| `ui` | Local web UI: browse, filter, read full postings, triage. Loopback only. |
 | `config` | Show or change the provider chain, per-task models, and spend limit. |
 | `run` | discover → enrich → match → score → signals → draft, in one go. |
 

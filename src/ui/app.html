@@ -1,0 +1,516 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>jobscout</title>
+<style>
+  /* Light palette on bare :root; only the tokens change for dark. */
+  :root {
+    --bg: #fbfbfa;
+    --panel: #ffffff;
+    --ink: #1a1a18;
+    --muted: #6b6b66;
+    --line: #e4e4e0;
+    --accent: #1a6a5a;
+    --accent-soft: #e6f2ef;
+    --good: #1d7a4c;
+    --warn: #9a6b12;
+    --bad: #a33a2a;
+    --row-hover: #f3f3f1;
+    --selected: #e9f1ef;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #141614;
+      --panel: #1b1e1c;
+      --ink: #e8e8e4;
+      --muted: #9a9a92;
+      --line: #2c302d;
+      --accent: #5fbfa6;
+      --accent-soft: #1d2b27;
+      --good: #5fbf84;
+      --warn: #d4a548;
+      --bad: #e0715c;
+      --row-hover: #21251f;
+      --selected: #23302c;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #141614; --panel: #1b1e1c; --ink: #e8e8e4; --muted: #9a9a92;
+    --line: #2c302d; --accent: #5fbfa6; --accent-soft: #1d2b27;
+    --good: #5fbf84; --warn: #d4a548; --bad: #e0715c;
+    --row-hover: #21251f; --selected: #23302c; color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 14px/1.5 ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  a { color: var(--accent); }
+
+  header {
+    display: flex; align-items: center; gap: 18px;
+    padding: 10px 18px; border-bottom: 1px solid var(--line);
+    background: var(--panel); position: sticky; top: 0; z-index: 5;
+  }
+  .brand { font-weight: 650; letter-spacing: -0.01em; }
+  .brand span { color: var(--muted); font-weight: 400; margin-left: 8px; font-size: 12px; }
+  nav { display: flex; gap: 4px; margin-left: auto; }
+  nav button {
+    font: inherit; border: 1px solid transparent; background: none; color: var(--muted);
+    padding: 5px 11px; border-radius: 7px; cursor: pointer;
+  }
+  nav button:hover { background: var(--row-hover); color: var(--ink); }
+  nav button[aria-current="true"] { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+
+  main { padding: 0; }
+  .view[hidden] { display: none !important; }
+
+  /* ── filter bar ───────────────────────────────────────────── */
+  .filters {
+    display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+    padding: 10px 18px; border-bottom: 1px solid var(--line); background: var(--panel);
+  }
+  .filters input, .filters select {
+    font: inherit; padding: 6px 9px; border: 1px solid var(--line);
+    border-radius: 7px; background: var(--bg); color: var(--ink); min-width: 0;
+  }
+  .filters input[type="search"] { flex: 1 1 220px; }
+  .filters label { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; }
+  .count { color: var(--muted); font-size: 13px; margin-left: auto; white-space: nowrap; }
+
+  /* ── split layout ─────────────────────────────────────────── */
+  .split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); height: calc(100vh - 106px); }
+  @media (max-width: 980px) { .split { grid-template-columns: 1fr; height: auto; } }
+
+  .list { overflow-y: auto; border-right: 1px solid var(--line); }
+  .detail { overflow-y: auto; padding: 20px 24px; }
+  @media (max-width: 980px) {
+    .list { border-right: none; border-bottom: 1px solid var(--line); max-height: 60vh; }
+  }
+
+  table { width: 100%; border-collapse: collapse; }
+  th {
+    text-align: left; font-size: 12px; font-weight: 600; color: var(--muted);
+    padding: 8px 10px; border-bottom: 1px solid var(--line);
+    position: sticky; top: 0; background: var(--panel); cursor: pointer; white-space: nowrap;
+  }
+  th:hover { color: var(--ink); }
+  td { padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tbody tr { cursor: pointer; }
+  tbody tr:hover { background: var(--row-hover); }
+  tbody tr[aria-selected="true"] { background: var(--selected); }
+  .co { font-weight: 600; }
+.ti { color: var(--muted); font-size: 13px; }
+  /* Hacker News has no location field, so its postings put the entire advert
+     in one. Clamped here rather than truncated in SQL, so the detail view
+     still shows whatever the engine actually returned. */
+  .loc {
+    color: var(--muted); font-size: 13px;
+    display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical;
+    overflow: hidden; overflow-wrap: anywhere;
+  }
+  .role {
+    color: var(--muted); font-size: 13px;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .nowrap { white-space: nowrap; }
+
+  .pill {
+    display: inline-block; padding: 1px 7px; border-radius: 999px;
+    font-size: 11px; font-weight: 600; border: 1px solid var(--line);
+  }
+  .pill.good { color: var(--good); border-color: currentColor; }
+  .pill.warn { color: var(--warn); border-color: currentColor; }
+  .pill.bad { color: var(--bad); border-color: currentColor; }
+  .pill.mute { color: var(--muted); }
+
+  .bar { height: 5px; border-radius: 3px; background: var(--line); overflow: hidden; min-width: 54px; }
+  .bar i { display: block; height: 100%; background: var(--accent); }
+
+  /* ── detail ───────────────────────────────────────────────── */
+  .detail h2 { margin: 0 0 2px; font-size: 19px; letter-spacing: -0.01em; }
+  .detail .where { color: var(--muted); margin-bottom: 14px; }
+  .facts { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
+  .actions { display: flex; gap: 8px; margin-bottom: 18px; flex-wrap: wrap; }
+  .actions button, .actions a {
+    font: inherit; padding: 7px 13px; border-radius: 8px; border: 1px solid var(--line);
+    background: var(--panel); color: var(--ink); cursor: pointer; text-decoration: none;
+  }
+  .actions button:hover { background: var(--row-hover); }
+  .actions .primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .actions .primary:hover { filter: brightness(1.08); }
+
+  section.block { margin-bottom: 20px; }
+  section.block h3 {
+    font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--muted); margin: 0 0 8px;
+  }
+  .chips { display: flex; flex-wrap: wrap; gap: 5px; }
+  .chip { font-size: 12px; padding: 2px 8px; border-radius: 6px; background: var(--accent-soft); color: var(--accent); }
+  .chip.miss { background: transparent; color: var(--bad); border: 1px solid currentColor; }
+  .chip.extra { background: transparent; color: var(--muted); border: 1px dashed var(--line); }
+
+  blockquote {
+    margin: 0 0 8px; padding: 6px 0 6px 12px; border-left: 3px solid var(--line);
+    color: var(--ink); font-size: 13px;
+  }
+  blockquote.pos { border-color: var(--good); }
+  blockquote.neg { border-color: var(--bad); }
+  blockquote cite { display: block; color: var(--muted); font-style: normal; font-size: 12px; margin-top: 3px; }
+
+  .desc {
+    white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 9px;
+    padding: 14px; max-height: 460px; overflow-y: auto;
+  }
+  .empty { color: var(--muted); padding: 40px 24px; text-align: center; }
+
+  /* ── dashboard ────────────────────────────────────────────── */
+  .pad { padding: 22px 24px; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 24px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 11px; padding: 14px 16px; }
+  .card b { display: block; font-size: 26px; font-weight: 650; letter-spacing: -0.02em; }
+  .card span { color: var(--muted); font-size: 12px; }
+  .wide { overflow-x: auto; }
+  .note {
+    border-left: 3px solid var(--warn); background: var(--panel);
+    padding: 10px 14px; border-radius: 0 8px 8px 0; margin-bottom: 20px; font-size: 13px;
+  }
+  dl.cfg { display: grid; grid-template-columns: max-content 1fr; gap: 6px 18px; margin: 0; font-size: 13px; }
+  dl.cfg dt { color: var(--muted); }
+  dl.cfg dd { margin: 0; overflow-wrap: anywhere; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">jobscout<span id="subtitle">loading…</span></div>
+  <nav>
+    <button data-view="jobs" aria-current="true">Jobs</button>
+    <button data-view="dash">Dashboard</button>
+    <button data-view="setup">Setup</button>
+  </nav>
+</header>
+
+<main>
+  <!-- ── Jobs ─────────────────────────────────────────────── -->
+  <div class="view" id="view-jobs">
+    <div class="filters">
+      <input type="search" id="f-q" placeholder="Search company, title or location…">
+      <input type="text" id="f-location" placeholder="Location" size="12">
+      <select id="f-status">
+        <option value="undecided">Undecided</option>
+        <option value="">Any status</option>
+        <option value="approved">Approved</option>
+        <option value="rejected">Rejected</option>
+      </select>
+      <select id="f-score">
+        <option value="">Any fit</option>
+        <option value="5">★5 only</option>
+        <option value="4">★4+</option>
+        <option value="3">★3+</option>
+      </select>
+      <label><input type="checkbox" id="f-remote"> Remote</label>
+      <span class="count" id="count"></span>
+    </div>
+    <div class="split">
+      <div class="list">
+        <table>
+          <thead>
+            <tr>
+              <th data-sort="score">Fit</th>
+              <th data-sort="company">Company / role</th>
+              <th data-sort="coverage">Skills</th>
+              <th class="nowrap">Pay</th>
+            </tr>
+          </thead>
+          <tbody id="rows"></tbody>
+        </table>
+        <div class="empty" id="list-empty" hidden>Nothing matches these filters.</div>
+      </div>
+      <div class="detail" id="detail">
+        <div class="empty">Select a role to see the full posting.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Dashboard ────────────────────────────────────────── -->
+  <div class="view pad" id="view-dash" hidden>
+    <div id="coverage-note"></div>
+    <div class="cards" id="dash-cards"></div>
+    <section class="block">
+      <h3>Engines</h3>
+      <div class="wide"><table id="engine-table"></table></div>
+    </section>
+  </div>
+
+  <!-- ── Setup ────────────────────────────────────────────── -->
+  <div class="view pad" id="view-setup" hidden>
+    <div class="note">
+      Shown read-only. Change these with <code>jobscout init</code> or
+      <code>jobscout config</code> — the CLI validates and writes
+      <code>config.toml</code>, so there is one place that can be wrong.
+    </div>
+    <div id="setup-body"></div>
+  </div>
+</main>
+
+<script>
+"use strict";
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+const state = { sort: "score", selected: null, jobs: [], loading: false };
+
+/* ── navigation ─────────────────────────────────────────── */
+document.querySelectorAll("nav button").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll("nav button").forEach((b) =>
+      b.setAttribute("aria-current", String(b === btn)));
+    for (const view of ["jobs", "dash", "setup"]) {
+      $("view-" + view).hidden = view !== btn.dataset.view;
+    }
+    if (btn.dataset.view === "dash") loadDashboard();
+    if (btn.dataset.view === "setup") loadSetup();
+  });
+});
+
+/* ── jobs list ──────────────────────────────────────────── */
+function queryString() {
+  const p = new URLSearchParams();
+  const q = $("f-q").value.trim();
+  const loc = $("f-location").value.trim();
+  const status = $("f-status").value;
+  const score = $("f-score").value;
+  if (q) p.set("q", q);
+  if (loc) p.set("location", loc);
+  if (status) p.set("status", status);
+  if (score) p.set("minAiScore", score);
+  if ($("f-remote").checked) p.set("remoteOnly", "1");
+  p.set("sort", state.sort);
+  p.set("limit", "300");
+  return p.toString();
+}
+
+function fitPill(job) {
+  if (job.aiScore === null) return '<span class="pill mute">—</span>';
+  const cls = job.aiScore >= 4 ? "good" : job.aiScore >= 3 ? "warn" : "bad";
+  return `<span class="pill ${cls}">★${job.aiScore}</span>`;
+}
+
+function payPill(job) {
+  const v = job.salaryVsTarget;
+  if (!v || v === "unknown") return '<span class="pill mute">—</span>';
+  const cls = v === "below" ? "bad" : "good";
+  return `<span class="pill ${cls}">${esc(v)}</span>`;
+}
+
+async function loadJobs() {
+  if (state.loading) return;
+  state.loading = true;
+  try {
+    const res = await fetch("/api/jobs?" + queryString());
+    const data = await res.json();
+    state.jobs = data.jobs;
+    $("count").textContent = `${data.jobs.length} of ${data.total} shown`;
+    $("list-empty").hidden = data.jobs.length > 0;
+
+    $("rows").innerHTML = data.jobs.map((j) => {
+      const pct = Math.round((j.coverage || 0) * 100);
+      const decided = j.reviewStatus === "approved" ? " ✓"
+        : j.reviewStatus === "rejected" ? " ✗" : "";
+      return `<tr data-id="${esc(j.id)}" aria-selected="${state.selected === j.id}">
+        <td class="nowrap">${fitPill(j)}</td>
+        <td>
+          <div class="co">${esc(j.company)}${decided}</div>
+          <div class="role">${esc(j.title)}</div>
+          <div class="loc">${esc(j.location || "—")}</div>
+        </td>
+        <td class="nowrap">
+          <div class="ti">${j.matchedRequired}/${j.totalRequired}</div>
+          <div class="bar"><i style="width:${pct}%"></i></div>
+        </td>
+        <td class="nowrap">${payPill(j)}</td>
+      </tr>`;
+    }).join("");
+
+    document.querySelectorAll("#rows tr").forEach((tr) => {
+      tr.addEventListener("click", () => selectJob(tr.dataset.id));
+    });
+  } finally {
+    state.loading = false;
+  }
+}
+
+document.querySelectorAll("th[data-sort]").forEach((th) => {
+  th.addEventListener("click", () => { state.sort = th.dataset.sort; loadJobs(); });
+});
+
+let debounce;
+["f-q", "f-location"].forEach((id) =>
+  $(id).addEventListener("input", () => {
+    clearTimeout(debounce);
+    debounce = setTimeout(loadJobs, 200);
+  }));
+["f-status", "f-score", "f-remote"].forEach((id) =>
+  $(id).addEventListener("change", loadJobs));
+
+/* ── job detail ─────────────────────────────────────────── */
+function chips(items, cls) {
+  if (!items || !items.length) return "";
+  return `<div class="chips">${items.map((s) =>
+    `<span class="chip ${cls}">${esc(s)}</span>`).join("")}</div>`;
+}
+
+function money(job) {
+  if (job.salaryMin == null && job.salaryMax == null) return "Pay not stated";
+  const cur = job.salaryCurrency || "";
+  const lo = job.salaryMin != null ? job.salaryMin.toLocaleString() : "";
+  const hi = job.salaryMax != null ? job.salaryMax.toLocaleString() : "";
+  const fig = lo && hi && lo !== hi ? `${lo}–${hi}` : lo || hi;
+  const per = job.salaryPeriod && job.salaryPeriod !== "annual" ? "/" + job.salaryPeriod : "";
+  return `${cur} ${fig}${per}`.trim();
+}
+
+async function selectJob(id) {
+  state.selected = id;
+  document.querySelectorAll("#rows tr").forEach((tr) =>
+    tr.setAttribute("aria-selected", String(tr.dataset.id === id)));
+
+  const job = await (await fetch("/api/jobs/" + encodeURIComponent(id))).json();
+  if (job.error) { $("detail").innerHTML = `<div class="empty">${esc(job.error)}</div>`; return; }
+
+  const facts = [
+    fitPill(job),
+    job.wlbScore != null ? `<span class="pill">☺${job.wlbScore} work-life</span>` : "",
+    `<span class="pill mute">${esc(money(job))}</span>`,
+    job.remote === 1
+      ? `<span class="pill good">remote${job.remoteRestriction ? " · " + esc(job.remoteRestriction) : ""}</span>`
+      : job.remote === 0 ? '<span class="pill mute">on-site</span>' : "",
+    `<span class="pill mute">${esc(job.engine)}</span>`,
+    job.repostCount > 2 ? `<span class="pill warn">reposted ${job.repostCount}×</span>` : "",
+    job.descriptionComplete ? "" : '<span class="pill warn">description truncated</span>',
+  ].filter(Boolean).join("");
+
+  const evidence = (job.wlbEvidence || []).map((e) =>
+    `<blockquote class="${e.polarity === "positive" ? "pos" : "neg"}">${esc(e.quote)}
+       <cite>${esc(e.note)}</cite></blockquote>`).join("");
+
+  $("detail").innerHTML = `
+    <h2>${esc(job.title)}</h2>
+    <div class="where">${esc(job.company)} · ${esc(job.location || "location not stated")}</div>
+    <div class="facts">${facts}</div>
+    <div class="actions">
+      ${job.applyUrl ? `<a class="primary" href="${esc(job.applyUrl)}" target="_blank" rel="noreferrer noopener">Open posting ↗</a>` : ""}
+      <button data-decide="approved">Approve</button>
+      <button data-decide="rejected">Reject</button>
+      ${job.reviewStatus === "approved" || job.reviewStatus === "rejected"
+        ? '<button data-decide="new">Undo</button>' : ""}
+    </div>
+
+    ${job.reason ? `<section class="block"><h3>Why this score</h3><p>${esc(job.reason)}</p>
+      ${(job.concerns || []).length ? `<ul>${job.concerns.map((c) => `<li>${esc(c)}</li>`).join("")}</ul>` : ""}
+    </section>` : ""}
+
+    <section class="block"><h3>Skills you have (${(job.matched || []).length})</h3>
+      ${chips(job.matched, "") || '<span class="ti">None recorded.</span>'}</section>
+    ${(job.missing || []).length ? `<section class="block"><h3>Missing</h3>${chips(job.missing, "miss")}</section>` : ""}
+    ${(job.bonus || []).length ? `<section class="block"><h3>Yours, not asked for</h3>${chips(job.bonus, "extra")}</section>` : ""}
+
+    ${(job.redFlags || []).length ? `<section class="block"><h3>Red flags</h3>${chips(job.redFlags, "miss")}</section>` : ""}
+    ${(job.greenFlags || []).length ? `<section class="block"><h3>Green flags</h3>${chips(job.greenFlags, "")}</section>` : ""}
+    ${evidence ? `<section class="block"><h3>What the posting says</h3>${evidence}</section>` : ""}
+
+    <section class="block"><h3>Full posting</h3>
+      <div class="desc">${esc(job.description) || "No description was fetched."}</div></section>`;
+
+  $("detail").querySelectorAll("[data-decide]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      await fetch(`/api/jobs/${encodeURIComponent(id)}/decision`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ status: btn.dataset.decide }),
+      });
+      await loadJobs();
+      await selectJob(id);
+    });
+  });
+}
+
+/* ── dashboard ──────────────────────────────────────────── */
+async function loadDashboard() {
+  const d = await (await fetch("/api/dashboard")).json();
+  const pct = Math.round(d.scoreCoverage * 100);
+
+  $("coverage-note").innerHTML = pct < 25
+    ? `<div class="note"><b>${pct}% of ranked postings have been scored</b> (${d.scored.toLocaleString()}
+       of ${d.ranked.toLocaleString()}). Skill counting alone ranks a sales role at a payments
+       company near a payments engineer — <code>jobscout score</code> is what separates them.
+       Until coverage rises, most of this list is unjudged.</div>`
+    : "";
+
+  const cards = [
+    ["Jobs", d.jobs], ["Companies", d.companies], ["Ranked", d.ranked],
+    ["Scored", d.scored], ["Work-life read", d.signalled], ["Boards", d.boards],
+    ["Undecided", d.pending], ["Approved", d.approved], ["Rejected", d.rejected],
+  ];
+  $("dash-cards").innerHTML = cards.map(([label, n]) =>
+    `<div class="card"><b>${Number(n || 0).toLocaleString()}</b><span>${label}</span></div>`).join("")
+    + `<div class="card"><b>$${(d.spend.total || 0).toFixed(2)}</b><span>AI spend, ${esc(d.spend.period)}</span></div>`;
+
+  $("engine-table").innerHTML =
+    `<thead><tr><th>Engine</th><th>Jobs</th><th>Last run</th></tr></thead><tbody>` +
+    d.engines.map((e) => {
+      const cls = e.status === "ok" ? "good" : e.status === "unknown" ? "mute" : "bad";
+      return `<tr><td>${esc(e.engine)} <span class="pill ${cls}">${esc(e.status)}</span></td>
+        <td>${e.jobs.toLocaleString()}</td>
+        <td class="ti">${esc((e.lastRun || "").replace("T", " ").slice(0, 16) || "—")}</td></tr>`;
+    }).join("") + "</tbody>";
+}
+
+/* ── setup ──────────────────────────────────────────────── */
+async function loadSetup() {
+  const c = await (await fetch("/api/config")).json();
+  const list = (a) => (a && a.length ? a.join(", ") : "—");
+  const salary = c.search.salaryMin
+    ? `${c.search.salaryCurrency} ${c.search.salaryMin.toLocaleString()} ${c.search.salaryPeriod}`
+    : "no floor set";
+  $("setup-body").innerHTML = `
+    <section class="block"><h3>Search</h3><dl class="cfg">
+      <dt>Roles</dt><dd>${esc(list(c.search.roles))}</dd>
+      <dt>Locations</dt><dd>${esc(list(c.search.locations))}</dd>
+      <dt>Remote only</dt><dd>${c.search.remoteOnly ? "yes" : "no"}</dd>
+      <dt>Salary floor</dt><dd>${esc(salary)}</dd>
+    </dl></section>
+    <section class="block"><h3>Matching</h3><dl class="cfg">
+      <dt>Threshold</dt><dd>${c.match.threshold}</dd>
+    </dl></section>
+    <section class="block"><h3>AI</h3><dl class="cfg">
+      <dt>Provider chain</dt><dd>${esc(list(c.ai.providers))}</dd>
+      <dt>Model</dt><dd>${esc(c.ai.model || "—")}</dd>
+      <dt>Budget</dt><dd>${c.ai.budget && c.ai.budget.limitUsd
+        ? "$" + c.ai.budget.limitUsd + " / " + esc(c.ai.budget.period || "month") : "no limit"}</dd>
+    </dl></section>
+    <section class="block"><h3>Engines</h3><dl class="cfg">
+      <dt>Enabled</dt><dd>${esc(list(c.engines.enabled))}</dd>
+      <dt>Résumé</dt><dd>${esc(c.profile.resumeFile || "not set")}</dd>
+    </dl></section>`;
+}
+
+/* ── start ──────────────────────────────────────────────── */
+(async function start() {
+  const d = await (await fetch("/api/dashboard")).json();
+  $("subtitle").textContent =
+    `${d.jobs.toLocaleString()} jobs · ${d.companies.toLocaleString()} companies`;
+  await loadJobs();
+})();
+</script>
+</body>
+</html>
