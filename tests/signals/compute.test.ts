@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { Database } from "bun:sqlite";
+import { MIGRATIONS } from "../../src/db/migrations/index.ts";
 import {
   salaryState,
   salaryVsTarget,
@@ -54,13 +56,13 @@ describe("salaryVsTarget", () => {
 
   test("reads above, meets, and below", () => {
     expect(salaryVsTarget(pay({ salaryMin: 150_000 }), target)).toBe("above");
-    expect(salaryVsTarget(pay({ salaryMin: 100_000 }), target)).toBe("meets");
+    expect(salaryVsTarget(pay({ salaryMin: 100_000 }), target)).toBe("within");
     expect(salaryVsTarget(pay({ salaryMin: 70_000 }), target)).toBe("below");
   });
 
   /** A figure a rounding away from the floor is not a rejection. */
   test("allows a little slack around the floor", () => {
-    expect(salaryVsTarget(pay({ salaryMin: 99_000 }), target)).toBe("meets");
+    expect(salaryVsTarget(pay({ salaryMin: 99_000 }), target)).toBe("within");
   });
 
   /**
@@ -123,5 +125,37 @@ describe("describeSalary", () => {
     expect(describeSalary(pay({ salaryMin: 9_000, salaryPeriod: "monthly" }), "unknown")).toContain(
       "/monthly",
     );
+  });
+});
+
+describe("the verdict vocabulary", () => {
+  /**
+   * These strings go straight into a column with a CHECK constraint. When they
+   * drifted apart, `computeSignals` threw on the insert and threw again in the
+   * handler that was meant to save the arithmetic, taking the whole stage down.
+   * It never fired only because no posting checked so far stated a salary.
+   */
+  test("every verdict the code can produce is one the schema accepts", () => {
+    const db = new Database(":memory:");
+    for (const step of MIGRATIONS) db.exec(step.sql);
+    db.prepare(`INSERT INTO jobs (id,engine,native_id,company,title,first_seen,last_seen)
+                VALUES (?,?,?,?,?,?,?)`).run("a", "e", "n", "C", "T", "2026-01-01", "2026-01-01");
+
+    const target: PayTarget = { salaryMin: 100_000, salaryCurrency: "USD", salaryPeriod: "annual" };
+    const produced = new Set<string>([
+      salaryVsTarget(pay(), target),
+      salaryVsTarget(pay({ salaryMin: 150_000 }), target),
+      salaryVsTarget(pay({ salaryMin: 100_000 }), target),
+      salaryVsTarget(pay({ salaryMin: 10_000 }), target),
+    ]);
+    expect(produced.size).toBe(4);
+
+    for (const verdict of produced) {
+      expect(() =>
+        db.prepare(`INSERT OR REPLACE INTO signals (job_id,salary_vs_target,computed_at)
+                    VALUES (?,?,?)`).run("a", verdict, "2026-01-01"),
+      ).not.toThrow();
+    }
+    db.close();
   });
 });

@@ -26,6 +26,7 @@ import { applyCommand } from "./cli/apply.ts";
 import { boardsCommand } from "./cli/boards.ts";
 import { configCommand } from "./cli/config.ts";
 import { uiCommand } from "./cli/ui.ts";
+import { checkCommand } from "./cli/check.ts";
 
 const main = defineCommand({
   meta: {
@@ -47,6 +48,7 @@ const main = defineCommand({
     review: reviewCommand,
     prepare: prepareCommand,
     apply: applyCommand,
+    check: checkCommand,
     status: statusCommand,
     config: configCommand,
     ui: uiCommand,

@@ -27,6 +27,8 @@ export interface JobSummary {
   reviewStatus: string | null;
   postedAt: string | null;
   companyType: string | null;
+  liveness: string | null;
+  livenessReason: string | null;
 }
 
 export interface JobFilters {
@@ -40,6 +42,7 @@ export interface JobFilters {
   remoteOnly?: boolean;
   status?: string;
   companyType?: string;
+  liveness?: string;
   sort?: "score" | "coverage" | "posted" | "company";
   limit?: number;
   offset?: number;
@@ -63,7 +66,8 @@ const SUMMARY_SELECT = `
          s.ai_score AS aiScore, g.wlb_score AS wlbScore,
          g.salary_vs_target AS salaryVsTarget,
          j.review_status AS reviewStatus, j.posted_at AS postedAt,
-         j.company_type AS companyType
+         j.company_type AS companyType,
+         j.liveness AS liveness, j.liveness_reason AS livenessReason
   FROM jobs j
   LEFT JOIN matches m ON m.job_id = j.id
   LEFT JOIN scores  s ON s.job_id = j.id
@@ -102,6 +106,18 @@ function conditions(filters: JobFilters): { sql: string; params: SQLQueryBinding
     params.push(filters.minCoverage);
   }
   if (filters.remoteOnly) sql.push(`AND j.remote = 1`);
+  if (filters.liveness?.trim()) {
+    const wanted = filters.liveness.trim();
+    // "unchecked" is the absence of a value; "hideClosed" is the useful default
+    // for browsing, since a closed posting is not a candidate.
+    if (wanted === "unchecked") sql.push(`AND j.liveness IS NULL`);
+    else if (wanted === "open-or-unknown") {
+      sql.push(`AND COALESCE(j.liveness,'unknown') NOT IN ('closed','gone')`);
+    } else {
+      sql.push(`AND j.liveness = ?`);
+      params.push(wanted);
+    }
+  }
   if (filters.companyType?.trim()) {
     const wanted = filters.companyType.trim();
     // "unclassified" is the absence of a value, which a plain equality test
@@ -244,6 +260,7 @@ export interface Dashboard {
   spend: { period: string; total: number };
   /** The share of ranked postings that have an AI score, 0–1. */
   scoreCoverage: number;
+  liveness: { open: number; closed: number; gone: number; unreachable: number; unchecked: number };
   /** How much of the ranking still reflects the résumé as it stands. */
   freshness: Freshness;
   profileFingerprint: string;
@@ -305,6 +322,14 @@ export function dashboard(db: Database): Dashboard {
     // Surfacing this was the point: 106 of 1,691 ranked is easy to miss in a
     // list and obvious as a number.
     scoreCoverage: counts.ranked ? (counts.scored ?? 0) / counts.ranked : 0,
+    liveness: one<{ open: number; closed: number; gone: number; unreachable: number; unchecked: number }>(
+      `SELECT
+         SUM(CASE WHEN liveness='open' THEN 1 ELSE 0 END)        AS open,
+         SUM(CASE WHEN liveness='closed' THEN 1 ELSE 0 END)      AS closed,
+         SUM(CASE WHEN liveness='gone' THEN 1 ELSE 0 END)        AS gone,
+         SUM(CASE WHEN liveness='unreachable' THEN 1 ELSE 0 END) AS unreachable,
+         SUM(CASE WHEN liveness IS NULL THEN 1 ELSE 0 END)       AS unchecked
+       FROM jobs WHERE canonical_id IS NULL`),
     freshness: rankingFreshness(db, fingerprint),
     profileFingerprint: fingerprint,
     profileSkills:

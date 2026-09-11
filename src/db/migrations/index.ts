@@ -22,6 +22,7 @@ import m004 from "./004_ai_spend.sql" with { type: "text" };
 import m005 from "./005_tracker.sql" with { type: "text" };
 import m006 from "./006_profile_fingerprint.sql" with { type: "text" };
 import m007 from "./007_crawl.sql" with { type: "text" };
+import m008 from "./008_liveness.sql" with { type: "text" };
 
 export interface Migration {
   version: number;
@@ -37,6 +38,7 @@ export const MIGRATIONS: readonly Migration[] = [
   { version: 5, name: "tracker", sql: m005 },
   { version: 6, name: "profile-fingerprint", sql: m006 },
   { version: 7, name: "crawl", sql: m007 },
+  { version: 8, name: "liveness", sql: m008 },
 ];
 
 /** The version a fully migrated database reports. */

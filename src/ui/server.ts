@@ -112,6 +112,7 @@ export function filtersFrom(url: URL): JobFilters {
     remoteOnly: p.get("remoteOnly") === "1",
     status: p.get("status") ?? undefined,
     companyType: p.get("companyType") ?? undefined,
+    liveness: p.get("liveness") ?? undefined,
     sort: (["score", "coverage", "posted", "company"] as const).includes(sort as never)
       ? (sort as JobFilters["sort"])
       : undefined,

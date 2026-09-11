@@ -1,61 +1,51 @@
 import { describe, expect, test, beforeAll, afterAll } from "bun:test";
 import { Database } from "bun:sqlite";
+import { MIGRATIONS } from "../../src/db/migrations/index.ts";
 import { listJobs, countJobs, getJob, dashboard, facets } from "../../src/ui/queries.ts";
 
 let db: Database;
 
 beforeAll(() => {
+  // Built from the real migrations rather than hand-copied DDL. Three times a
+  // hand-written fixture fell behind a new column and failed for no reason
+  // that had anything to do with what was being tested.
   db = new Database(":memory:");
-  db.run(`CREATE TABLE jobs (id TEXT PRIMARY KEY, engine TEXT, native_id TEXT, company TEXT,
-    title TEXT, location TEXT, remote INTEGER, remote_restriction TEXT, apply_url TEXT,
-    description TEXT, description_complete INTEGER, salary_min REAL, salary_max REAL,
-    salary_currency TEXT, salary_period TEXT, seniority TEXT, employment_type TEXT,
-    posted_at TEXT, first_seen TEXT, last_seen TEXT, raw TEXT, canonical_id TEXT,
-    review_status TEXT, company_type TEXT)`);
-  db.run(`CREATE TABLE matches (job_id TEXT PRIMARY KEY, matched_required INTEGER,
-    total_required INTEGER, matched_preferred INTEGER, total_preferred INTEGER,
-    coverage REAL, match_score REAL, matched TEXT, missing TEXT, bonus TEXT, matched_at TEXT,
-    profile_fingerprint TEXT)`);
-  db.run(`CREATE TABLE scores (job_id TEXT PRIMARY KEY, ai_score INTEGER, reason TEXT,
-    concerns TEXT, model TEXT, scored_at TEXT, profile_fingerprint TEXT)`);
-  db.run(`CREATE TABLE signals (job_id TEXT PRIMARY KEY, salary_state TEXT,
-    salary_vs_target TEXT, wlb_score INTEGER, wlb_evidence TEXT, red_flags TEXT,
-    green_flags TEXT, remote_reality TEXT, interview_stages INTEGER, repost_count INTEGER,
-    computed_at TEXT)`);
-  db.run(`CREATE TABLE profile_skills (skill TEXT PRIMARY KEY, label TEXT, category TEXT,
-    years REAL, level TEXT, evidence TEXT, source TEXT, pinned INTEGER, updated_at TEXT)`);
-  db.run(`CREATE TABLE boards (id INTEGER PRIMARY KEY, company TEXT, ats TEXT, token TEXT,
-    verified_at TEXT, active INTEGER)`);
-  db.run(`CREATE TABLE engine_runs (id INTEGER PRIMARY KEY, engine TEXT, started_at TEXT,
-    finished_at TEXT, status TEXT, fetched INTEGER, inserted INTEGER, error TEXT)`);
-  db.run(`CREATE TABLE ai_spend (id INTEGER PRIMARY KEY, at TEXT, provider TEXT, model TEXT,
-    stage TEXT, input_tokens INTEGER, output_tokens INTEGER, estimated_usd REAL, cost_source TEXT)`);
+  for (const step of MIGRATIONS) db.exec(step.sql);
 
-  const job = db.prepare(`INSERT INTO jobs (id,engine,company,title,location,remote,apply_url,
-    description,description_complete,canonical_id,review_status,salary_currency)
-    VALUES (?,?,?,?,?,?,?,?,1,?,?,'USD')`);
-  job.run("a", "greenhouse", "Stripe", "Backend Engineer", "Remote", 1, "u1", "desc a", null, "new");
-  job.run("b", "lever", "Acme", "Sales Lead", "Chennai", 0, "u2", "desc b", null, "approved");
+  // The real schema requires native_id, first_seen and last_seen.
+  const job = db.prepare(`INSERT INTO jobs (id,engine,native_id,company,title,location,remote,
+    apply_url,description,description_complete,canonical_id,review_status,salary_currency,
+    first_seen,last_seen)
+    VALUES (?,?,?,?,?,?,?,?,?,1,?,?,'USD','2026-09-01','2026-09-01')`);
+  job.run("a", "greenhouse", "n-a", "Stripe", "Backend Engineer", "Remote", 1, "u1", "desc a", null, "new");
+  job.run("b", "lever", "n-b", "Acme", "Sales Lead", "Chennai", 0, "u2", "desc b", null, "approved");
   db.run(`UPDATE jobs SET company_type='staffing' WHERE id='b'`);
   db.run(`UPDATE jobs SET company_type='product'  WHERE id='a'`);
-  job.run("c", "ashby", "Beta", "Platform Engineer", "London", null, "u3", "desc c", null, "rejected");
+  job.run("c", "ashby", "n-c", "Beta", "Platform Engineer", "London", null, "u3", "desc c", null, "rejected");
   // A duplicate folded into another posting: it must never appear in a list.
-  job.run("d", "ashby", "Beta", "Platform Engineer (dup)", "London", null, "u4", "x", "c", "new");
+  job.run("d", "ashby", "n-d", "Beta", "Platform Engineer (dup)", "London", null, "u4", "x", "c", "new");
 
   const m = db.prepare(`INSERT INTO matches (job_id,matched_required,total_required,coverage,
-    match_score,matched,missing,bonus) VALUES (?,?,?,?,?,?,?,?)`);
+    match_score,matched,missing,bonus,matched_at) VALUES (?,?,?,?,?,?,?,?,'2026-09-01')`);
   m.run("a", 9, 11, 0.82, 0.71, '["go","sql"]', '["kafka"]', '["pci"]');
   m.run("b", 2, 2, 1.0, 0.52, '["payments"]', "[]", "[]");
   m.run("c", 5, 10, 0.5, 0.4, "[]", "[]", "[]");
 
-  db.run(`INSERT INTO scores (job_id,ai_score,reason,concerns) VALUES ('a',5,'great','[]')`);
-  db.run(`INSERT INTO scores (job_id,ai_score,reason,concerns) VALUES ('b',1,'sales role','["different"]')`);
+  db.run(`INSERT INTO scores (job_id,ai_score,reason,concerns,scored_at)
+          VALUES ('a',5,'great','[]','2026-09-01')`);
+  db.run(`INSERT INTO scores (job_id,ai_score,reason,concerns,scored_at)
+          VALUES ('b',1,'sales role','["different"]','2026-09-01')`);
   db.run(`INSERT INTO signals (job_id,wlb_score,salary_vs_target,red_flags,green_flags,
-    wlb_evidence,repost_count) VALUES ('a',4,'above','[]','["four-day week"]','[]',1)`);
-  db.run(`INSERT INTO boards (company,ats,token,active) VALUES ('Stripe','greenhouse','stripe',1)`);
+    wlb_evidence,repost_count,computed_at)
+    VALUES ('a',4,'above','[]','["four-day week"]','[]',1,'2026-09-01')`);
+  db.run(`INSERT INTO boards (company,ats,token,active,verified_at)
+          VALUES ('Stripe','greenhouse','stripe',1,'2026-09-01')`);
   db.run(`INSERT INTO engine_runs (engine,started_at,status,fetched,inserted)
           VALUES ('greenhouse','2026-09-10T10:00:00Z','ok',10,5)`);
-  db.run(`INSERT INTO ai_spend (at,provider,model,stage,estimated_usd) VALUES ('x','p','m','score',0.25)`);
+  db.run(`UPDATE jobs SET liveness='open'   WHERE id='a'`);
+  db.run(`UPDATE jobs SET liveness='closed' WHERE id='b'`);
+  db.run(`INSERT INTO ai_spend (at,provider,model,stage,estimated_usd,cost_source)
+          VALUES ('2026-09-01','p','m','score',0.25,'derived')`);
 });
 
 afterAll(() => db.close());
@@ -110,6 +100,19 @@ describe("listJobs", () => {
   /** Absence of a value, which a plain equality test would never match. */
   test("unclassified means the column is null", () => {
     expect(listJobs(db, { companyType: "unclassified" }).map((j) => j.id)).toEqual(["c"]);
+  });
+
+  /** A closed posting is not a candidate, so browsing hides it by default. */
+  test("hides closed postings, keeping unchecked ones", () => {
+    const ids = listJobs(db, { liveness: "open-or-unknown" }).map((j) => j.id);
+    expect(ids).toContain("a");
+    expect(ids).toContain("c");
+    expect(ids).not.toContain("b");
+  });
+
+  test("can ask for exactly one liveness state", () => {
+    expect(listJobs(db, { liveness: "closed" }).map((j) => j.id)).toEqual(["b"]);
+    expect(listJobs(db, { liveness: "unchecked" }).map((j) => j.id)).toEqual(["c"]);
   });
 
   test("remote filter keeps only postings marked remote", () => {

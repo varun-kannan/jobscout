@@ -23,6 +23,7 @@ jobscout run           # discover → enrich → match → score → signals →
 jobscout review        # triage: approve or reject by keystroke
 jobscout prepare       # finalise approved jobs into the outbox
 jobscout apply         # opens each one, cover letter on your clipboard — you submit
+jobscout check         # which postings are still open
 jobscout status        # where everything stands, and what has gone quiet
 jobscout ui            # browse, read and triage in your browser
 ```
@@ -164,6 +165,7 @@ makes has to quote the posting verbatim, so a claim can always be checked agains
 | `review` | Full-screen triage. |
 | `prepare` | Finalise approved jobs into the outbox. |
 | `apply` | Open each job and stage its materials. You submit. |
+| `check` | Fetch each posting to see if it is still open. Respects robots.txt. No AI. |
 | `status` | Pipeline, application lifecycle, staleness, engine health, AI spend. |
 | `ui` | Local web UI: browse, filter, read full postings, triage, track applications. Loopback only. |
 | `config` | Show or change the provider chain, per-task models, and spend limit. |

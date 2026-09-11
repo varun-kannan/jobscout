@@ -102,6 +102,9 @@
   }
   .row:hover { background: var(--hover); }
   .row[aria-selected="true"] { background: var(--sel); box-shadow: inset 2px 0 0 var(--ink); }
+  /* A closed posting is still worth seeing — it explains a gap in the list —
+     but it must never read as a candidate. */
+  .row.dead .co, .row.dead .role { text-decoration: line-through; opacity: .55; }
   .row .co { font-weight: 600; letter-spacing: -0.01em; }
   .row .role {
     color: var(--muted); font-size: 13px; margin-top: 1px;
@@ -314,6 +317,14 @@
         <option value="4">Strong and up</option>
         <option value="3">Worth a look and up</option>
       </select>
+      <select id="f-live">
+        <option value="open-or-unknown">Hide closed</option>
+        <option value="">Any state</option>
+        <option value="open">Confirmed open</option>
+        <option value="closed">Closed</option>
+        <option value="unreachable">Could not check</option>
+        <option value="unchecked">Not yet checked</option>
+      </select>
       <select id="f-type">
         <option value="">Any company</option>
       </select>
@@ -418,6 +429,7 @@ function queryString() {
   set("status", $("f-status").value);
   set("minAiScore", $("f-score").value);
   set("companyType", $("f-type").value);
+  set("liveness", $("f-live").value);
   if ($("f-remote").checked) p.set("remoteOnly", "1");
   p.set("sort", state.sort);
   p.set("limit", "300");
@@ -433,6 +445,7 @@ async function loadJobs() {
     ? '<div class="empty">Nothing matches these filters.</div>'
     : data.jobs.map((j) => {
         const pct = Math.round((j.coverage || 0) * 100);
+        const dead = j.liveness === "closed" || j.liveness === "gone";
         const decided = j.reviewStatus === "approved" ? '<span class="tag solid">approved</span>'
           : j.reviewStatus === "rejected" ? '<span class="tag">rejected</span>' : "";
         const bits = [
@@ -441,14 +454,15 @@ async function loadJobs() {
           j.remote === 1 ? "remote" : "",
           j.salaryVsTarget && j.salaryVsTarget !== "unknown" ? "pay " + j.salaryVsTarget : "",
         ].filter(Boolean).join(" · ");
-        return `<div class="row" data-id="${esc(j.id)}" aria-selected="${state.selected === j.id}">
+        return `<div class="row ${dead ? "dead" : ""}" data-id="${esc(j.id)}" aria-selected="${state.selected === j.id}">
           <div>
             ${dots(j.aiScore, "Fit")}
             <div class="ratio num">${j.matchedRequired}/${j.totalRequired}</div>
             <div class="bar"><i style="width:${pct}%"></i></div>
           </div>
           <div>
-            <div class="co">${esc(j.company)}${decided}</div>
+            <div class="co">${esc(j.company)}${decided}${dead
+            ? `<span class="tag">${esc(j.liveness === "gone" ? "removed" : "closed")}</span>` : ""}</div>
             <div class="role">${esc(j.title)}</div>
             <div class="meta">${esc(bits)}</div>
           </div>
@@ -464,7 +478,7 @@ let t;
 ["f-q", "f-location"].forEach((id) => $(id).addEventListener("input", () => {
   clearTimeout(t); t = setTimeout(loadJobs, 200);
 }));
-["f-status", "f-score", "f-remote", "f-type"].forEach((id) => $(id).addEventListener("change", loadJobs));
+["f-status", "f-score", "f-remote", "f-type", "f-live"].forEach((id) => $(id).addEventListener("change", loadJobs));
 
 function chips(items, cls) {
   if (!items || !items.length) return "";
@@ -497,6 +511,10 @@ async function selectJob(id) {
     fact("Working", j.remote === 1
       ? "Remote" + (j.remoteRestriction ? ` <span class="tag">${esc(j.remoteRestriction)}</span>` : "")
       : j.remote === 0 ? "On-site" : "Not stated"),
+    fact("Still open?", j.liveness
+      ? `${esc(j.liveness === "open" ? "Yes" : j.liveness === "unreachable" ? "Could not check" : j.liveness)}`
+        + (j.livenessReason ? ` <span class="tag">${esc(j.livenessReason)}</span>` : "")
+      : "Not checked"),
     fact("Source", esc(j.engine) + (j.repostCount > 2
       ? ` <span class="tag">reposted ${j.repostCount}×</span>` : "")),
   ].join("");
@@ -573,7 +591,9 @@ async function loadDashboard() {
     ["Undecided", d.pending], ["Approved", d.approved], ["Rejected", d.rejected]];
   $("dash-cards").innerHTML = cards.map(([l, n]) =>
     `<div class="card"><b class="num">${Number(n || 0).toLocaleString()}</b><span>${l}</span></div>`).join("")
-    + `<div class="card"><b class="num">$${(d.spend.total || 0).toFixed(2)}</b><span>AI spend</span></div>`;
+    + `<div class="card"><b class="num">$${(d.spend.total || 0).toFixed(2)}</b><span>AI spend</span></div>`
+    + `<div class="card"><b class="num">${(d.liveness.closed + d.liveness.gone).toLocaleString()}</b><span>Closed</span></div>`
+    + `<div class="card"><b class="num">${d.liveness.unchecked.toLocaleString()}</b><span>Unchecked</span></div>`;
 
   $("engine-table").innerHTML =
     `<thead><tr><th>Engine</th><th>Status</th><th>Jobs</th><th>Last run</th></tr></thead><tbody>` +

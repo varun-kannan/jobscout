@@ -14,7 +14,8 @@
 export type SalaryState = "range" | "single" | "absent";
 
 /** How the stated pay compares with the floor you set. */
-export type SalaryVsTarget = "above" | "meets" | "below" | "unknown";
+/** Mirrors the CHECK constraint on signals.salary_vs_target exactly. */
+export type SalaryVsTarget = "above" | "within" | "below" | "unknown";
 
 /** Whether "remote" means remote. */
 export type RemoteReality = "remote" | "restricted" | "hybrid-or-onsite" | "unstated";
@@ -81,7 +82,7 @@ export function salaryVsTarget(job: JobPay, target: PayTarget): SalaryVsTarget {
   // rejection.
   const slack = targetAnnual * 0.02;
   if (jobAnnual > targetAnnual + slack) return "above";
-  if (jobAnnual >= targetAnnual - slack) return "meets";
+  if (jobAnnual >= targetAnnual - slack) return "within";
   return "below";
 }
 
