@@ -28,6 +28,8 @@ import {
 } from "./tracker.ts";
 import { APPLICATION_STATUSES } from "../db/applications.ts";
 import { applySettings, settingsOptions } from "./settings.ts";
+import { probeBackends } from "../setup/ai-setup.ts";
+import { loadSecrets } from "../config/load.ts";
 import { rankAll } from "../skills/rank.ts";
 import { classifyCompany, COMPANY_TYPES } from "../signals/company-type.ts";
 import {
@@ -221,6 +223,14 @@ export function createServer(options: UiOptions): { url: string; stop(): void } 
         if (!getJob(db, id)) return json({ error: "No such job" }, 404);
         setStatus.run(status, id);
         return json({ id, status });
+      }
+
+      if (pathname === "/api/providers") {
+        // The chain is a preference, not a record of what is installed. Showing
+        // which entries actually resolve is the difference between "why is
+        // gemini-cli listed" and "it is listed but will be skipped".
+        const secrets = await loadSecrets(paths);
+        return json({ backends: await probeBackends(secrets) });
       }
 
       if (pathname === "/api/rerank" && request.method === "POST") {

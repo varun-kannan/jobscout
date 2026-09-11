@@ -258,6 +258,9 @@
   .picked { display: flex; flex-direction: column; gap: 5px; }
   .picked .item { display: flex; gap: 6px; align-items: center; }
   .picked .item span { flex: 1; font-size: 13px; }
+  .picked .item .state { flex: none; font-size: 11px; color: var(--faint); }
+  .picked .item.off span { color: var(--faint); }
+  .picked .item.off .state { text-decoration: underline dotted; }
   .picked .item button { font: inherit; font-size: 11px; padding: 2px 7px; border: 1px solid var(--line-strong);
     border-radius: 4px; background: var(--bg); color: var(--muted); cursor: pointer; }
   .picked .item button:hover { color: var(--ink); }
@@ -754,6 +757,7 @@ function renderSkills(skills) {
 }
 
 let settings = null;
+let providerState = null;
 
 function field(label, html, hint) {
   return `<label>${label}</label><div>${html}${hint ? `<div class="hint">${hint}</div>` : ""}
@@ -762,9 +766,15 @@ function field(label, html, hint) {
 
 /** Ordered list with remove buttons — a chain's order is what it means. */
 function chainEditor(all, chosen) {
+  const state = (p) => {
+    const b = (providerState || []).find((x) => x.id === p);
+    if (!b) return { text: "", off: false };
+    return { text: b.available ? b.detail : b.detail + " — will be skipped", off: !b.available };
+  };
   return `<div class="picked" id="chain">` +
-    chosen.map((p, i) => `<div class="item" data-p="${esc(p)}">
+    chosen.map((p, i) => `<div class="item ${state(p).off ? "off" : ""}" data-p="${esc(p)}">
       <span>${i + 1}. ${esc(p)}</span>
+      <span class="state">${esc(state(p).text)}</span>
       <button data-move="-1" ${i === 0 ? "disabled" : ""}>↑</button>
       <button data-move="1" ${i === chosen.length - 1 ? "disabled" : ""}>↓</button>
       <button data-drop="1">remove</button>
@@ -776,10 +786,12 @@ function chainEditor(all, chosen) {
 }
 
 async function loadSetup() {
-  const [c, p] = await Promise.all([
+  const [c, p, pr] = await Promise.all([
     (await fetch("/api/config")).json(),
     (await fetch("/api/profile")).json(),
+    (await fetch("/api/providers")).json(),
   ]);
+  providerState = pr.backends;
   settings = c;
 
   $("drop-title").textContent = c.profile.resumeFile
@@ -811,7 +823,8 @@ async function loadSetup() {
       <input type="text" id="s-budget" value="${c.ai.budget && c.ai.budget.limit ? c.ai.budget.limit : ""}" placeholder="blank for no limit" style="max-width:140px">
       <select id="s-budget-period">${opts.budgetPeriods.map((x) =>
         `<option ${x === (c.ai.budget && c.ai.budget.period) ? "selected" : ""}>${x}</option>`).join("")}</select>
-    </div>`, "Checked before a stage starts, so nothing is left half-written.");
+    </div>`, "Only limits the paid APIs — per-token cost is the only thing that can be counted in dollars. " +
+       "Claude Code and Codex CLI spend your subscription, which this cannot meter.");
 
   $("form-engines").innerHTML = field("Enabled",
     `<div class="checks">${opts.engines.map((e) => `<label>

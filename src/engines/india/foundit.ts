@@ -41,6 +41,10 @@ interface FounditJob {
   locations?: string;
   redirectUrl?: string;
   applyUrl?: string;
+  /** Relative paths to foundit's own posting page, used when there is no
+   *  outbound link. Present even when `redirectUrl` is an empty string. */
+  jdUrl?: string;
+  seoJdUrl?: string;
   createdAt?: number;
   skills?: string;
   skillsWithSynonyms?: Array<{ value?: string; synonyms?: string[] }>;
@@ -75,6 +79,39 @@ function salaryOf(job: FounditJob): SalaryRange | undefined {
 }
 
 /** The comma-separated `skills` string, preferring canonical values where given. */
+const FOUNDIT_BASE = "https://www.foundit.in";
+
+/**
+ * The best link foundit gives for a posting.
+ *
+ * `redirectUrl` is the outbound link to the employer, and is the one worth
+ * having — but for syndicated postings it comes back as an empty string while
+ * `seoJdUrl` and `jdUrl` still point at foundit's own page. Reading only the
+ * first two left 37 postings with no link at all, including roles at EY and
+ * BNY Mellon whose URL was sitting in the same payload.
+ *
+ * The relative paths are resolved against foundit's host; anything already
+ * absolute is passed through.
+ */
+export function applyUrlOf(job: {
+  applyUrl?: string;
+  redirectUrl?: string;
+  seoJdUrl?: string;
+  jdUrl?: string;
+}): string {
+  // `||`, not `??`: clean() returns an empty string rather than null, so a
+  // nullish check never falls through — which is how the empty redirectUrl
+  // shadowed the usable link in the first place.
+  const direct = clean(job.applyUrl) || clean(job.redirectUrl);
+  if (direct) return direct;
+
+  // seoJdUrl first: it is the canonical one foundit links to itself.
+  const relative = clean(job.seoJdUrl) || clean(job.jdUrl);
+  if (!relative) return "";
+  if (/^https?:\/\//i.test(relative)) return relative;
+  return FOUNDIT_BASE + (relative.startsWith("/") ? relative : "/" + relative);
+}
+
 function skillsOf(job: FounditJob): string[] {
   const canonical = asArray<{ value?: string }>(job.skillsWithSynonyms)
     .map((s) => clean(s.value))
@@ -127,7 +164,7 @@ export const foundit: Engine = {
           company: clean(job.companyName),
           title,
           location,
-          applyUrl: clean(job.applyUrl ?? job.redirectUrl),
+          applyUrl: applyUrlOf(job),
           // Foundit's search response carries no body. Saying so lets the
           // enrichment relay know this is worth re-fetching from an ATS board.
           description: "",
