@@ -20,6 +20,7 @@ import m002 from "./002_signals.sql" with { type: "text" };
 import m003 from "./003_skill_source.sql" with { type: "text" };
 import m004 from "./004_ai_spend.sql" with { type: "text" };
 import m005 from "./005_tracker.sql" with { type: "text" };
+import m006 from "./006_profile_fingerprint.sql" with { type: "text" };
 
 export interface Migration {
   version: number;
@@ -33,6 +34,7 @@ export const MIGRATIONS: readonly Migration[] = [
   { version: 3, name: "skill-source", sql: m003 },
   { version: 4, name: "ai-spend", sql: m004 },
   { version: 5, name: "tracker", sql: m005 },
+  { version: 6, name: "profile-fingerprint", sql: m006 },
 ];
 
 /** The version a fully migrated database reports. */

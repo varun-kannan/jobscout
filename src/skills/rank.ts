@@ -11,6 +11,7 @@ import type { Config } from "../config/schema.ts";
 import { extractSkills } from "./extract.ts";
 import { AliasResolver } from "./aliases.ts";
 import { loadProfile } from "./profile.ts";
+import { fingerprintOf } from "./fingerprint.ts";
 import { matchJob, type JobSkill, type MatchResult } from "./match.ts";
 import { labelOf } from "./canonical.ts";
 
@@ -72,12 +73,18 @@ function jobSkillsOf(db: Database, jobId: string): JobSkill[] {
     }));
 }
 
-function persist(db: Database, jobId: string, result: MatchResult, now: string): void {
+function persist(
+  db: Database,
+  jobId: string,
+  result: MatchResult,
+  now: string,
+  fingerprint: string,
+): void {
   db.prepare(`
     INSERT INTO matches (
       job_id, matched_required, total_required, matched_preferred, total_preferred,
-      coverage, match_score, matched, missing, bonus, matched_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      coverage, match_score, matched, missing, bonus, matched_at, profile_fingerprint
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(job_id) DO UPDATE SET
       matched_required = excluded.matched_required,
       total_required   = excluded.total_required,
@@ -87,6 +94,7 @@ function persist(db: Database, jobId: string, result: MatchResult, now: string):
       match_score      = excluded.match_score,
       matched          = excluded.matched,
       missing          = excluded.missing,
+      profile_fingerprint = excluded.profile_fingerprint,
       bonus            = excluded.bonus,
       matched_at       = excluded.matched_at
   `).run(
@@ -101,6 +109,7 @@ function persist(db: Database, jobId: string, result: MatchResult, now: string):
     JSON.stringify(result.missing),
     JSON.stringify(result.bonus),
     now,
+    fingerprint,
   );
 }
 
@@ -126,6 +135,9 @@ export function rankAll(
     )
     .all();
 
+  // Stamped on every row so a ranking can be told from one computed against a
+  // résumé you have since replaced.
+  const fingerprint = fingerprintOf(profile);
   const now = new Date().toISOString();
   const summary: RankSummary = {
     considered: jobs.length,
@@ -151,7 +163,7 @@ export function rankAll(
       domains: profile.filter((s) => s.category === "domain").map((s) => s.slug),
     });
 
-    persist(db, job.id, result, now);
+    persist(db, job.id, result, now, fingerprint);
     summary.ranked++;
     if (result.matchScore >= config.match.threshold) summary.aboveThreshold++;
   }

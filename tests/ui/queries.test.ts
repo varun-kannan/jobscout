@@ -11,16 +11,19 @@ beforeAll(() => {
     description TEXT, description_complete INTEGER, salary_min REAL, salary_max REAL,
     salary_currency TEXT, salary_period TEXT, seniority TEXT, employment_type TEXT,
     posted_at TEXT, first_seen TEXT, last_seen TEXT, raw TEXT, canonical_id TEXT,
-    review_status TEXT)`);
+    review_status TEXT, company_type TEXT)`);
   db.run(`CREATE TABLE matches (job_id TEXT PRIMARY KEY, matched_required INTEGER,
     total_required INTEGER, matched_preferred INTEGER, total_preferred INTEGER,
-    coverage REAL, match_score REAL, matched TEXT, missing TEXT, bonus TEXT, matched_at TEXT)`);
+    coverage REAL, match_score REAL, matched TEXT, missing TEXT, bonus TEXT, matched_at TEXT,
+    profile_fingerprint TEXT)`);
   db.run(`CREATE TABLE scores (job_id TEXT PRIMARY KEY, ai_score INTEGER, reason TEXT,
-    concerns TEXT, model TEXT, scored_at TEXT)`);
+    concerns TEXT, model TEXT, scored_at TEXT, profile_fingerprint TEXT)`);
   db.run(`CREATE TABLE signals (job_id TEXT PRIMARY KEY, salary_state TEXT,
     salary_vs_target TEXT, wlb_score INTEGER, wlb_evidence TEXT, red_flags TEXT,
     green_flags TEXT, remote_reality TEXT, interview_stages INTEGER, repost_count INTEGER,
     computed_at TEXT)`);
+  db.run(`CREATE TABLE profile_skills (skill TEXT PRIMARY KEY, label TEXT, category TEXT,
+    years REAL, level TEXT, evidence TEXT, source TEXT, pinned INTEGER, updated_at TEXT)`);
   db.run(`CREATE TABLE boards (id INTEGER PRIMARY KEY, company TEXT, ats TEXT, token TEXT,
     verified_at TEXT, active INTEGER)`);
   db.run(`CREATE TABLE engine_runs (id INTEGER PRIMARY KEY, engine TEXT, started_at TEXT,
@@ -33,6 +36,8 @@ beforeAll(() => {
     VALUES (?,?,?,?,?,?,?,?,1,?,?,'USD')`);
   job.run("a", "greenhouse", "Stripe", "Backend Engineer", "Remote", 1, "u1", "desc a", null, "new");
   job.run("b", "lever", "Acme", "Sales Lead", "Chennai", 0, "u2", "desc b", null, "approved");
+  db.run(`UPDATE jobs SET company_type='staffing' WHERE id='b'`);
+  db.run(`UPDATE jobs SET company_type='product'  WHERE id='a'`);
   job.run("c", "ashby", "Beta", "Platform Engineer", "London", null, "u3", "desc c", null, "rejected");
   // A duplicate folded into another posting: it must never appear in a list.
   job.run("d", "ashby", "Beta", "Platform Engineer (dup)", "London", null, "u4", "x", "c", "new");
@@ -94,6 +99,17 @@ describe("listJobs", () => {
   test("undecided means anything not approved or rejected", () => {
     expect(listJobs(db, { status: "undecided" }).map((j) => j.id)).toEqual(["a"]);
     expect(listJobs(db, { status: "approved" }).map((j) => j.id)).toEqual(["b"]);
+  });
+
+  /** A staffing firm and the employer post the same titles. */
+  test("filters by company type", () => {
+    expect(listJobs(db, { companyType: "product" }).map((j) => j.id)).toEqual(["a"]);
+    expect(listJobs(db, { companyType: "staffing" }).map((j) => j.id)).toEqual(["b"]);
+  });
+
+  /** Absence of a value, which a plain equality test would never match. */
+  test("unclassified means the column is null", () => {
+    expect(listJobs(db, { companyType: "unclassified" }).map((j) => j.id)).toEqual(["c"]);
   });
 
   test("remote filter keeps only postings marked remote", () => {

@@ -7,6 +7,7 @@
  */
 
 import type { Database, SQLQueryBindings } from "bun:sqlite";
+import { rankingFreshness, currentFingerprint, type Freshness } from "../skills/fingerprint.ts";
 
 export interface JobSummary {
   id: string;
@@ -25,6 +26,7 @@ export interface JobSummary {
   salaryVsTarget: string | null;
   reviewStatus: string | null;
   postedAt: string | null;
+  companyType: string | null;
 }
 
 export interface JobFilters {
@@ -37,6 +39,7 @@ export interface JobFilters {
   minCoverage?: number;
   remoteOnly?: boolean;
   status?: string;
+  companyType?: string;
   sort?: "score" | "coverage" | "posted" | "company";
   limit?: number;
   offset?: number;
@@ -59,7 +62,8 @@ const SUMMARY_SELECT = `
          COALESCE(m.match_score,0)      AS matchScore,
          s.ai_score AS aiScore, g.wlb_score AS wlbScore,
          g.salary_vs_target AS salaryVsTarget,
-         j.review_status AS reviewStatus, j.posted_at AS postedAt
+         j.review_status AS reviewStatus, j.posted_at AS postedAt,
+         j.company_type AS companyType
   FROM jobs j
   LEFT JOIN matches m ON m.job_id = j.id
   LEFT JOIN scores  s ON s.job_id = j.id
@@ -98,6 +102,16 @@ function conditions(filters: JobFilters): { sql: string; params: SQLQueryBinding
     params.push(filters.minCoverage);
   }
   if (filters.remoteOnly) sql.push(`AND j.remote = 1`);
+  if (filters.companyType?.trim()) {
+    const wanted = filters.companyType.trim();
+    // "unclassified" is the absence of a value, which a plain equality test
+    // would silently never match.
+    if (wanted === "unclassified") sql.push(`AND j.company_type IS NULL`);
+    else {
+      sql.push(`AND j.company_type = ?`);
+      params.push(wanted);
+    }
+  }
   if (filters.status?.trim()) {
     const status = filters.status.trim();
     // "undecided" is the useful filter, and it is not a stored value: the
@@ -230,9 +244,14 @@ export interface Dashboard {
   spend: { period: string; total: number };
   /** The share of ranked postings that have an AI score, 0–1. */
   scoreCoverage: number;
+  /** How much of the ranking still reflects the résumé as it stands. */
+  freshness: Freshness;
+  profileFingerprint: string;
+  profileSkills: number;
 }
 
 export function dashboard(db: Database): Dashboard {
+  const fingerprint = currentFingerprint(db);
   const one = <T>(sql: string): T =>
     db.query<T, []>(sql).get() ?? ({} as T);
 
@@ -286,6 +305,10 @@ export function dashboard(db: Database): Dashboard {
     // Surfacing this was the point: 106 of 1,691 ranked is easy to miss in a
     // list and obvious as a number.
     scoreCoverage: counts.ranked ? (counts.scored ?? 0) / counts.ranked : 0,
+    freshness: rankingFreshness(db, fingerprint),
+    profileFingerprint: fingerprint,
+    profileSkills:
+      db.query<{ n: number }, []>(`SELECT COUNT(*) AS n FROM profile_skills`).get()?.n ?? 0,
   };
 }
 

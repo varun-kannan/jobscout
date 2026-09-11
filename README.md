@@ -30,8 +30,16 @@ jobscout ui            # browse, read and triage in your browser
 The UI has four views: **Jobs** (browse, filter, read, triage), **Tracker**
 (every application through `viewed → applied → interviewing → offer / rejected`,
 with notes, idle-day counts and CSV export), **Dashboard** (pipeline, scoring
-coverage, engine health, spend) and **Setup** (drag a résumé in to re-extract
-your skills).
+coverage, engine health, spend) and **Setup** (drag a résumé in to re-extract your
+skills, and edit every setting — roles, locations, salary floor, threshold,
+provider chain, budget, engines — validated by the same schema the CLI uses).
+
+Rankings record which profile they were computed against, so replacing your
+résumé does not leave the dashboard quietly reporting numbers about a CV you no
+longer have: it says how many rankings predate it and offers to re-rank.
+Postings are also classified by company type — product, service, consultancy,
+staffing, agency — because a staffing firm and the employer post the same
+titles and are not the same job.
 
 In Jobs, `j`/`k` move, `a` approves, `r` rejects, `o` opens the posting and `/`
 focuses search — a posting you open is recorded as **viewed**, so the tracker

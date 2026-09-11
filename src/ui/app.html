@@ -239,6 +239,29 @@
   .link { background: none; border: 0; color: var(--muted); cursor: pointer; font: inherit; font-size: 12px; padding: 2px 4px; }
   .link:hover { color: var(--ink); text-decoration: underline; }
 
+  /* ── settings form ────────────────────────────────────────── */
+  .form { display: grid; grid-template-columns: 170px minmax(0, 1fr); gap: 12px 20px; align-items: start; }
+  .form label { color: var(--muted); font-size: 13px; padding-top: 7px; }
+  .form input[type=text], .form input[type=number], .form select, .form textarea {
+    font: inherit; font-size: 13px; padding: 7px 10px; width: 100%;
+    border: 1px solid var(--line-strong); border-radius: 6px;
+    background: var(--bg); color: var(--ink);
+  }
+  .form textarea { min-height: 62px; resize: vertical; line-height: 1.5; }
+  .form input:focus, .form select:focus, .form textarea:focus { outline: 2px solid var(--ink); outline-offset: -1px; }
+  .form .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .form .err { color: var(--ink); font-size: 12px; font-weight: 600; margin-top: 4px; }
+  .form .hint { color: var(--faint); font-size: 12px; margin-top: 4px; }
+  .checks { display: flex; flex-wrap: wrap; gap: 6px 14px; }
+  .checks label { padding-top: 0; display: inline-flex; align-items: center; gap: 6px; color: var(--ink); }
+  .saved { font-size: 13px; color: var(--muted); }
+  .picked { display: flex; flex-direction: column; gap: 5px; }
+  .picked .item { display: flex; gap: 6px; align-items: center; }
+  .picked .item span { flex: 1; font-size: 13px; }
+  .picked .item button { font: inherit; font-size: 11px; padding: 2px 7px; border: 1px solid var(--line-strong);
+    border-radius: 4px; background: var(--bg); color: var(--muted); cursor: pointer; }
+  .picked .item button:hover { color: var(--ink); }
+
   /* ── résumé drop zone ─────────────────────────────────────── */
   .drop {
     border: 1.5px dashed var(--line-strong); border-radius: 10px;
@@ -272,6 +295,7 @@
 
 <main>
   <div class="view" id="view-jobs">
+    <div id="stale-banner"></div>
     <div class="filters">
       <input type="search" id="f-q" placeholder="Search company, title or location…">
       <input type="text" id="f-location" placeholder="Location" size="11">
@@ -286,6 +310,9 @@
         <option value="5">Excellent only</option>
         <option value="4">Strong and up</option>
         <option value="3">Worth a look and up</option>
+      </select>
+      <select id="f-type">
+        <option value="">Any company</option>
       </select>
       <select id="f-sort">
         <option value="score">Sort: fit</option>
@@ -335,12 +362,22 @@
       <div class="upload-status" id="upload-status"></div>
       <div id="profile-skills" style="margin-top:16px"></div>
     </section>
-    <div class="note">
-      Everything below is read-only. Change it with <code>jobscout init</code> or
-      <code>jobscout config</code> — the CLI validates and writes <code>config.toml</code>,
-      so there is one place that can be wrong.
+    <section class="block">
+      <h3>Search</h3>
+      <div class="form" id="form-search"></div>
+    </section>
+    <section class="block">
+      <h3>AI providers</h3>
+      <div class="form" id="form-ai"></div>
+    </section>
+    <section class="block">
+      <h3>Engines</h3>
+      <div class="form" id="form-engines"></div>
+    </section>
+    <div class="row" style="display:flex;gap:10px;align-items:center;margin-bottom:40px">
+      <button class="btn solid" id="save-settings">Save settings</button>
+      <span class="saved" id="save-status"></span>
     </div>
-    <div id="setup-body"></div>
   </div>
 </main>
 
@@ -377,6 +414,7 @@ function queryString() {
   set("location", $("f-location").value.trim());
   set("status", $("f-status").value);
   set("minAiScore", $("f-score").value);
+  set("companyType", $("f-type").value);
   if ($("f-remote").checked) p.set("remoteOnly", "1");
   p.set("sort", state.sort);
   p.set("limit", "300");
@@ -386,6 +424,7 @@ function queryString() {
 async function loadJobs() {
   const data = await (await fetch("/api/jobs?" + queryString())).json();
   $("count").textContent = `${data.jobs.length.toLocaleString()} of ${data.total.toLocaleString()}`;
+  renderStaleBanner();
 
   $("list").innerHTML = data.jobs.length === 0
     ? '<div class="empty">Nothing matches these filters.</div>'
@@ -395,6 +434,7 @@ async function loadJobs() {
           : j.reviewStatus === "rejected" ? '<span class="tag">rejected</span>' : "";
         const bits = [
           j.location || "—",
+          j.companyType && j.companyType !== "unknown" ? j.companyType : "",
           j.remote === 1 ? "remote" : "",
           j.salaryVsTarget && j.salaryVsTarget !== "unknown" ? "pay " + j.salaryVsTarget : "",
         ].filter(Boolean).join(" · ");
@@ -421,7 +461,7 @@ let t;
 ["f-q", "f-location"].forEach((id) => $(id).addEventListener("input", () => {
   clearTimeout(t); t = setTimeout(loadJobs, 200);
 }));
-["f-status", "f-score", "f-remote"].forEach((id) => $(id).addEventListener("change", loadJobs));
+["f-status", "f-score", "f-remote", "f-type"].forEach((id) => $(id).addEventListener("change", loadJobs));
 
 function chips(items, cls) {
   if (!items || !items.length) return "";
@@ -512,12 +552,18 @@ async function selectJob(id) {
 async function loadDashboard() {
   const d = await (await fetch("/api/dashboard")).json();
   const pct = Math.round(d.scoreCoverage * 100);
-  $("coverage-note").innerHTML = pct < 25
+  freshness = d.freshness; freshness.skills = d.profileSkills;
+  const outdated = d.freshness.stale + d.freshness.unknown;
+  const staleNote = outdated > 0
+    ? `<div class="note"><b>${outdated.toLocaleString()} of ${d.ranked.toLocaleString()} rankings
+       predate your current résumé.</b> They were computed against an earlier profile, so their
+       scores describe a CV you have replaced. Re-rank from the Jobs tab.</div>` : "";
+  $("coverage-note").innerHTML = staleNote + (pct < 25
     ? `<div class="note"><b>${pct}% of ranked postings have been scored</b>
        (${d.scored.toLocaleString()} of ${d.ranked.toLocaleString()}). Skill counting alone
        ranks a sales role at a payments company near a payments engineer —
        <code>jobscout score</code> is what separates them. Until coverage rises,
-       most of this list is unjudged.</div>` : "";
+       most of this list is unjudged.</div>` : "");
 
   const cards = [["Jobs", d.jobs], ["Companies", d.companies], ["Ranked", d.ranked],
     ["Scored", d.scored], ["Work-life read", d.signalled], ["Boards", d.boards],
@@ -534,6 +580,46 @@ async function loadDashboard() {
       <td class="num">${e.jobs.toLocaleString()}</td>
       <td style="color:var(--faint)">${esc((e.lastRun || "").replace("T", " ").slice(0, 16) || "—")}</td>
     </tr>`).join("") + "</tbody>";
+}
+
+/* ── staleness ──────────────────────────────────────────
+ * A ranking is derived from your skills, so replacing your résumé invalidates
+ * every one. Saying so is the difference between a dashboard reporting a real
+ * number and reporting one about a CV you no longer have.
+ */
+let freshness = null;
+
+async function refreshFreshness() {
+  const d = await (await fetch("/api/dashboard")).json();
+  freshness = d.freshness;
+  freshness.skills = d.profileSkills;
+  renderStaleBanner();
+  return d;
+}
+
+function renderStaleBanner() {
+  const box = $("stale-banner");
+  if (!box || !freshness) return;
+  const outdated = freshness.stale + freshness.unknown;
+  if (outdated === 0) { box.innerHTML = ""; return; }
+  box.innerHTML = `<div class="note" style="margin:14px 22px 0">
+    <b>${outdated.toLocaleString()} rankings were not computed against your current résumé.</b>
+    Your profile has ${freshness.skills} skills; these rows were ranked against an earlier one,
+    so their scores and skill counts describe a CV you have replaced.
+    <div style="margin-top:10px"><button class="btn solid" id="do-rerank">Re-rank now</button>
+      <span class="saved" id="rerank-status" style="margin-left:10px"></span></div>
+  </div>`;
+  $("do-rerank").addEventListener("click", async () => {
+    const btn = $("do-rerank");
+    btn.disabled = true;
+    $("rerank-status").innerHTML = '<span class="spin"></span> Re-ranking every posting…';
+    const res = await fetch("/api/rerank", { method: "POST" });
+    const d = await res.json();
+    $("rerank-status").textContent =
+      `${d.ranked.toLocaleString()} ranked · ${d.aboveThreshold.toLocaleString()} above threshold`;
+    await refreshFreshness();
+    await loadJobs();
+  });
 }
 
 /* ── tracker ────────────────────────────────────────────── */
@@ -644,6 +730,10 @@ async function upload(file) {
       (d.suspect ? " That is very little text — check it is not a scanned image." : "");
     renderSkills(d.profile);
     loadSetup();
+    // The profile just changed, so every existing ranking now describes an
+    // older CV. Recheck and surface it rather than leaving stale numbers up.
+    await refreshFreshness();
+    await loadJobs();
   } catch (err) {
     status.className = "upload-status err";
     status.textContent = "Could not reach jobscout. Is it still running?";
@@ -663,93 +753,164 @@ function renderSkills(skills) {
         ${esc(cat)}</div>${chips(list.map((s) => `${s.label} · ${s.level}`), "")}</div>`).join("");
 }
 
+let settings = null;
+
+function field(label, html, hint) {
+  return `<label>${label}</label><div>${html}${hint ? `<div class="hint">${hint}</div>` : ""}
+    <div class="err" data-err></div></div>`;
+}
+
+/** Ordered list with remove buttons — a chain's order is what it means. */
+function chainEditor(all, chosen) {
+  return `<div class="picked" id="chain">` +
+    chosen.map((p, i) => `<div class="item" data-p="${esc(p)}">
+      <span>${i + 1}. ${esc(p)}</span>
+      <button data-move="-1" ${i === 0 ? "disabled" : ""}>↑</button>
+      <button data-move="1" ${i === chosen.length - 1 ? "disabled" : ""}>↓</button>
+      <button data-drop="1">remove</button>
+    </div>`).join("") +
+    `</div><div class="row" style="margin-top:8px">
+      <select id="add-provider"><option value="">Add a provider…</option>
+      ${all.filter((p) => !chosen.includes(p)).map((p) => `<option>${esc(p)}</option>`).join("")}
+      </select></div>`;
+}
+
 async function loadSetup() {
   const [c, p] = await Promise.all([
     (await fetch("/api/config")).json(),
     (await fetch("/api/profile")).json(),
   ]);
-  const list = (a) => (a && a.length ? a.join(", ") : "—");
-  const salary = c.search.salaryMin
-    ? `${c.search.salaryCurrency} ${c.search.salaryMin.toLocaleString()} ${c.search.salaryPeriod}`
-    : "no floor set";
+  settings = c;
+
   $("drop-title").textContent = c.profile.resumeFile
     ? "Replace your résumé — drop a file here, or click to choose"
     : "Drop your résumé here, or click to choose";
-  if (!status.textContent) renderSkills(p.skills);
+  if (!$("upload-status").textContent) renderSkills(p.skills);
 
-  $("setup-body").innerHTML = `
-    <section class="block"><h3>Search</h3><dl class="cfg">
-      <dt>Roles</dt><dd>${esc(list(c.search.roles))}</dd>
-      <dt>Locations</dt><dd>${esc(list(c.search.locations))}</dd>
-      <dt>Remote only</dt><dd>${c.search.remoteOnly ? "yes" : "no"}</dd>
-      <dt>Salary floor</dt><dd>${esc(salary)}</dd>
-      <dt>Match threshold</dt><dd class="num">${c.match.threshold}</dd>
-    </dl></section>
-    <section class="block"><h3>AI</h3><dl class="cfg">
-      <dt>Provider chain</dt><dd>${esc(list(c.ai.providers))}</dd>
-      <dt>Model</dt><dd>${esc(c.ai.model || "—")}</dd>
-      <dt>Budget</dt><dd>${c.ai.budget && c.ai.budget.limitUsd
-        ? "$" + c.ai.budget.limitUsd + " / " + esc(c.ai.budget.period || "month") : "no limit"}</dd>
-    </dl></section>
-    <section class="block"><h3>Engines</h3><dl class="cfg">
-      <dt>Enabled</dt><dd>${esc(list(c.engines.enabled))}</dd>
-      <dt>Résumé file</dt><dd>${esc(c.profile.resumeFile || "not set")}</dd>
-    </dl></section>`;
+  const opts = c.options;
+  $("form-search").innerHTML =
+    field("Roles", `<textarea id="s-roles">${esc((c.search.roles || []).join(", "))}</textarea>`,
+      "Comma separated. These are what the engines actually filter on.") +
+    field("Locations", `<textarea id="s-locations">${esc((c.search.locations || []).join(", "))}</textarea>`,
+      "Comma separated. Leave blank for anywhere.") +
+    field("Remote only", `<label><input type="checkbox" id="s-remote" ${c.search.remoteOnly ? "checked" : ""}> Only remote roles</label>`) +
+    field("Salary floor", `<div class="row">
+      <input type="text" id="s-salary" value="${c.search.salaryMin ?? ""}" placeholder="blank for none" style="max-width:160px">
+      <input type="text" id="s-currency" value="${esc(c.search.salaryCurrency || "USD")}" style="max-width:80px">
+      <select id="s-period">${opts.periods.map((x) =>
+        `<option ${x === c.search.salaryPeriod ? "selected" : ""}>${x}</option>`).join("")}</select>
+    </div>`, "Compared only against postings quoted in the same currency — never converted.") +
+    field("Match threshold", `<input type="number" id="s-threshold" step="0.01" min="0" max="1" value="${c.match.threshold}" style="max-width:120px">`,
+      "Below this, a posting is not worth an AI second opinion.");
+
+  $("form-ai").innerHTML =
+    field("Provider chain", chainEditor(opts.providers, c.ai.providers || []),
+      "Tried in order until one is available. Empty means run without AI.") +
+    field("Model", `<input type="text" id="s-model" value="${esc(c.ai.model || "")}" style="max-width:260px">`) +
+    field("Budget", `<div class="row">
+      <input type="text" id="s-budget" value="${c.ai.budget && c.ai.budget.limit ? c.ai.budget.limit : ""}" placeholder="blank for no limit" style="max-width:140px">
+      <select id="s-budget-period">${opts.budgetPeriods.map((x) =>
+        `<option ${x === (c.ai.budget && c.ai.budget.period) ? "selected" : ""}>${x}</option>`).join("")}</select>
+    </div>`, "Checked before a stage starts, so nothing is left half-written.");
+
+  $("form-engines").innerHTML = field("Enabled",
+    `<div class="checks">${opts.engines.map((e) => `<label>
+      <input type="checkbox" class="s-engine" value="${esc(e)}"
+        ${(c.engines.enabled || []).includes(e) ? "checked" : ""}> ${esc(e)}</label>`).join("")}</div>`,
+    "Keyless engines need no credentials; the rest are skipped without one.");
+
+  wireChain();
+  populateTypeFilter(c.companyTypes);
 }
 
-/* ── keyboard ───────────────────────────────────────────
- * Triaging thousands of rows with a mouse is the slow path. These only fire
- * when you are not typing into something, so `a` in a search box is still an
- * `a`.
- */
-function typing(el) {
-  return el && (el.tagName === "INPUT" || el.tagName === "SELECT" ||
-                el.tagName === "TEXTAREA" || el.isContentEditable);
-}
-
-function move(delta) {
-  const rows = [...$("list").querySelectorAll(".row")];
-  if (!rows.length) return;
-  const at = rows.findIndex((r) => r.dataset.id === state.selected);
-  const next = rows[Math.min(Math.max(at + delta, 0), rows.length - 1)] ?? rows[0];
-  next.scrollIntoView({ block: "nearest" });
-  selectJob(next.dataset.id);
-}
-
-async function decide(status) {
-  if (!state.selected) return;
-  await fetch(`/api/jobs/${encodeURIComponent(state.selected)}/decision`, {
-    method: "POST", headers: { "content-type": "application/json" },
-    body: JSON.stringify({ status }),
+function wireChain() {
+  const box = $("chain");
+  if (!box) return;
+  const order = () => [...box.querySelectorAll(".item")].map((i) => i.dataset.p);
+  box.querySelectorAll("[data-move]").forEach((b) =>
+    b.addEventListener("click", () => {
+      const list = order();
+      const item = b.closest(".item");
+      const at = list.indexOf(item.dataset.p);
+      const to = at + Number(b.dataset.move);
+      if (to < 0 || to >= list.length) return;
+      [list[at], list[to]] = [list[to], list[at]];
+      redrawChain(list);
+    }));
+  box.querySelectorAll("[data-drop]").forEach((b) =>
+    b.addEventListener("click", () => {
+      const item = b.closest(".item");
+      redrawChain(order().filter((p) => p !== item.dataset.p));
+    }));
+  const add = $("add-provider");
+  if (add) add.addEventListener("change", () => {
+    if (add.value) redrawChain([...order(), add.value]);
   });
-  const keep = state.selected;
-  await loadJobs();
-  await selectJob(keep);
 }
 
-document.addEventListener("keydown", (e) => {
-  if (typing(document.activeElement) || e.metaKey || e.ctrlKey || e.altKey) return;
-  if ($("view-jobs").hidden) return;
-  const keys = {
-    j: () => move(1),
-    k: () => move(-1),
-    ArrowDown: () => move(1),
-    ArrowUp: () => move(-1),
-    a: () => decide("approved"),
-    r: () => decide("rejected"),
-    u: () => decide("new"),
-    "/": () => $("f-q").focus(),
-    o: () => {
-      const link = $("detail").querySelector("a.btn.solid");
-      if (link) window.open(link.href, "_blank", "noreferrer");
-    },
+function redrawChain(list) {
+  const holder = $("chain").parentElement;
+  holder.querySelector("#chain").outerHTML = "";
+  holder.innerHTML = chainEditor(settings.options.providers, list) +
+    `<div class="hint">Tried in order until one is available. Empty means run without AI.</div>
+     <div class="err" data-err></div>`;
+  wireChain();
+}
+
+function populateTypeFilter(types) {
+  const sel = $("f-type");
+  if (!sel || sel.dataset.filled) return;
+  sel.innerHTML = '<option value="">Any company</option>' +
+    '<option value="unclassified">Unclassified</option>' +
+    (types || []).map((t) => `<option value="${esc(t)}">${esc(t)}</option>`).join("");
+  sel.dataset.filled = "1";
+}
+
+$("save-settings").addEventListener("click", async () => {
+  const chainBox = $("chain");
+  const patch = {
+    roles: $("s-roles").value,
+    locations: $("s-locations").value,
+    remoteOnly: $("s-remote").checked,
+    salaryMin: $("s-salary").value,
+    salaryCurrency: $("s-currency").value,
+    salaryPeriod: $("s-period").value,
+    threshold: $("s-threshold").value,
+    providers: chainBox ? [...chainBox.querySelectorAll(".item")].map((i) => i.dataset.p) : [],
+    model: $("s-model").value,
+    budgetLimitUsd: $("s-budget").value,
+    budgetPeriod: $("s-budget-period").value,
+    engines: [...document.querySelectorAll(".s-engine:checked")].map((c) => c.value),
   };
-  const fn = keys[e.key];
-  if (fn) { e.preventDefault(); fn(); }
+  document.querySelectorAll("[data-err]").forEach((e) => (e.textContent = ""));
+  $("save-status").textContent = "Saving…";
+
+  const res = await fetch("/api/config", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  const d = await res.json();
+  if (!res.ok) {
+    $("save-status").textContent = "Not saved.";
+    // Show each reason next to the field it belongs to.
+    const map = { roles: "s-roles", locations: "s-locations", salaryMin: "s-salary",
+      salaryCurrency: "s-currency", threshold: "s-threshold", budgetLimitUsd: "s-budget",
+      engines: "form-engines", providers: "form-ai" };
+    for (const [key, message] of Object.entries(d.errors || {})) {
+      const el = $(map[key] || "");
+      const slot = el ? el.closest("div").querySelector("[data-err]") : null;
+      if (slot) slot.textContent = message;
+      else $("save-status").textContent = `${key}: ${message}`;
+    }
+    return;
+  }
+  $("save-status").textContent = "Saved to config.toml.";
+  settings = { ...d.config, options: d.options };
+  loadJobs();
 });
 
 (async function start() {
-  const d = await (await fetch("/api/dashboard")).json();
+  const d = await refreshFreshness();
   $("subtitle").textContent =
     `${d.jobs.toLocaleString()} jobs · ${d.companies.toLocaleString()} companies`;
   await loadJobs();

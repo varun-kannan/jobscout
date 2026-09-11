@@ -27,6 +27,9 @@ import {
   updateTracked,
 } from "./tracker.ts";
 import { APPLICATION_STATUSES } from "../db/applications.ts";
+import { applySettings, settingsOptions } from "./settings.ts";
+import { rankAll } from "../skills/rank.ts";
+import { classifyCompany, COMPANY_TYPES } from "../signals/company-type.ts";
 import {
   countJobs,
   dashboard,
@@ -106,6 +109,7 @@ export function filtersFrom(url: URL): JobFilters {
     minCoverage: num("minCoverage"),
     remoteOnly: p.get("remoteOnly") === "1",
     status: p.get("status") ?? undefined,
+    companyType: p.get("companyType") ?? undefined,
     sort: (["score", "coverage", "posted", "company"] as const).includes(sort as never)
       ? (sort as JobFilters["sort"])
       : undefined,
@@ -154,6 +158,20 @@ export function createServer(options: UiOptions): { url: string; stop(): void } 
       if (pathname === "/api/dashboard") return json(dashboard(db));
       if (pathname === "/api/facets") return json(facets(db));
 
+      if (pathname === "/api/config" && (request.method === "POST" || request.method === "PATCH")) {
+        let patch: Record<string, unknown>;
+        try {
+          patch = (await request.json()) as Record<string, unknown>;
+        } catch {
+          return json({ error: "Body must be JSON" }, 400);
+        }
+        const result = applySettings(config, patch);
+        if (!result.ok) return json({ errors: result.errors }, 422);
+        config = result.config!;
+        await saveConfig(paths, config);
+        return json({ ok: true, config, options: settingsOptions() });
+      }
+
       if (pathname === "/api/config") {
         // The résumé path and provider chain are shown; secrets are in a
         // different file and deliberately never read here.
@@ -163,6 +181,8 @@ export function createServer(options: UiOptions): { url: string; stop(): void } 
           ai: { providers: config.ai.providers, model: config.ai.model, budget: config.ai.budget },
           engines: config.engines,
           profile: { resumeFile: config.profile.resumeFile },
+          options: settingsOptions(),
+          companyTypes: COMPANY_TYPES,
         });
       }
 
@@ -201,6 +221,32 @@ export function createServer(options: UiOptions): { url: string; stop(): void } 
         if (!getJob(db, id)) return json({ error: "No such job" }, 404);
         setStatus.run(status, id);
         return json({ id, status });
+      }
+
+      if (pathname === "/api/rerank" && request.method === "POST") {
+        // Everything, not just new postings: the point is that the profile
+        // changed, which invalidates rankings that already exist.
+        const summary = rankAll(db, config, { onlyNew: false });
+        return json({ ok: true, ...summary, dashboard: dashboard(db) });
+      }
+
+      if (pathname === "/api/classify" && request.method === "POST") {
+        const rows = db
+          .query<{ id: string; company: string; description: string }, []>(
+            `SELECT id, company, COALESCE(description,'') AS description
+             FROM jobs WHERE company_type IS NULL AND canonical_id IS NULL`,
+          )
+          .all();
+        const set = db.prepare(`UPDATE jobs SET company_type = ? WHERE id = ?`);
+        const counts: Record<string, number> = {};
+        db.transaction(() => {
+          for (const row of rows) {
+            const { type } = classifyCompany(row.company, row.description);
+            set.run(type, row.id);
+            counts[type] = (counts[type] ?? 0) + 1;
+          }
+        })();
+        return json({ ok: true, classified: rows.length, counts });
       }
 
       if (pathname === "/api/tracker") {
