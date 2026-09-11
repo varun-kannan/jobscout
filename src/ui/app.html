@@ -5,185 +5,226 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>jobscout</title>
 <style>
-  /* Light palette on bare :root; only the tokens change for dark. */
+  /*
+   * Monochrome by intent.
+   *
+   * With no hue to carry meaning, everything is said with weight, fill and
+   * space: a score is filled dots rather than a green pill, a missing skill is
+   * a dashed outline rather than a red one. It reads the same to someone who
+   * cannot distinguish red from green, and prints correctly.
+   */
   :root {
-    --bg: #fbfbfa;
-    --panel: #ffffff;
-    --ink: #1a1a18;
-    --muted: #6b6b66;
-    --line: #e4e4e0;
-    --accent: #1a6a5a;
-    --accent-soft: #e6f2ef;
-    --good: #1d7a4c;
-    --warn: #9a6b12;
-    --bad: #a33a2a;
-    --row-hover: #f3f3f1;
-    --selected: #e9f1ef;
+    --bg: #ffffff;
+    --panel: #fcfcfc;
+    --sunk: #f6f6f6;
+    --ink: #0f0f0f;
+    --muted: #63635e;
+    --faint: #9b9b95;
+    --line: #e6e6e2;
+    --line-strong: #cfcfc9;
+    --hover: #f4f4f1;
+    --sel: #ecece8;
+    --invert-bg: #0f0f0f;
+    --invert-ink: #ffffff;
     color-scheme: light;
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
-      --bg: #141614;
-      --panel: #1b1e1c;
-      --ink: #e8e8e4;
-      --muted: #9a9a92;
-      --line: #2c302d;
-      --accent: #5fbfa6;
-      --accent-soft: #1d2b27;
-      --good: #5fbf84;
-      --warn: #d4a548;
-      --bad: #e0715c;
-      --row-hover: #21251f;
-      --selected: #23302c;
+      --bg: #0c0c0b; --panel: #141413; --sunk: #1a1a18; --ink: #f2f2ee;
+      --muted: #a3a39c; --faint: #6f6f69; --line: #262624; --line-strong: #3a3a36;
+      --hover: #1c1c1a; --sel: #242421; --invert-bg: #f2f2ee; --invert-ink: #0c0c0b;
       color-scheme: dark;
     }
   }
   :root[data-theme="dark"] {
-    --bg: #141614; --panel: #1b1e1c; --ink: #e8e8e4; --muted: #9a9a92;
-    --line: #2c302d; --accent: #5fbfa6; --accent-soft: #1d2b27;
-    --good: #5fbf84; --warn: #d4a548; --bad: #e0715c;
-    --row-hover: #21251f; --selected: #23302c; color-scheme: dark;
+    --bg: #0c0c0b; --panel: #141413; --sunk: #1a1a18; --ink: #f2f2ee;
+    --muted: #a3a39c; --faint: #6f6f69; --line: #262624; --line-strong: #3a3a36;
+    --hover: #1c1c1a; --sel: #242421; --invert-bg: #f2f2ee; --invert-ink: #0c0c0b;
+    color-scheme: dark;
   }
 
   * { box-sizing: border-box; }
   body {
     margin: 0; background: var(--bg); color: var(--ink);
-    font: 14px/1.5 ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font: 14px/1.55 ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
   }
-  a { color: var(--accent); }
+  a { color: var(--ink); }
+  .num { font-variant-numeric: tabular-nums; }
 
+  /* ── header ───────────────────────────────────────────────── */
   header {
-    display: flex; align-items: center; gap: 18px;
-    padding: 10px 18px; border-bottom: 1px solid var(--line);
-    background: var(--panel); position: sticky; top: 0; z-index: 5;
+    display: flex; align-items: baseline; gap: 14px;
+    padding: 14px 22px; border-bottom: 1px solid var(--line);
+    background: var(--bg); position: sticky; top: 0; z-index: 5;
   }
-  .brand { font-weight: 650; letter-spacing: -0.01em; }
-  .brand span { color: var(--muted); font-weight: 400; margin-left: 8px; font-size: 12px; }
-  nav { display: flex; gap: 4px; margin-left: auto; }
+  .brand { font-weight: 600; letter-spacing: -0.02em; font-size: 15px; }
+  .brand span { color: var(--faint); font-weight: 400; margin-left: 10px; font-size: 12px; letter-spacing: 0; }
+  nav { display: flex; gap: 2px; margin-left: auto; }
   nav button {
-    font: inherit; border: 1px solid transparent; background: none; color: var(--muted);
-    padding: 5px 11px; border-radius: 7px; cursor: pointer;
+    font: inherit; font-size: 13px; border: 0; background: none; color: var(--muted);
+    padding: 5px 12px; border-radius: 6px; cursor: pointer;
   }
-  nav button:hover { background: var(--row-hover); color: var(--ink); }
-  nav button[aria-current="true"] { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+  nav button:hover { color: var(--ink); background: var(--hover); }
+  nav button[aria-current="true"] { background: var(--invert-bg); color: var(--invert-ink); }
 
-  main { padding: 0; }
   .view[hidden] { display: none !important; }
 
-  /* ── filter bar ───────────────────────────────────────────── */
+  /* ── filters ──────────────────────────────────────────────── */
   .filters {
     display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
-    padding: 10px 18px; border-bottom: 1px solid var(--line); background: var(--panel);
+    padding: 11px 22px; border-bottom: 1px solid var(--line);
   }
   .filters input, .filters select {
-    font: inherit; padding: 6px 9px; border: 1px solid var(--line);
-    border-radius: 7px; background: var(--bg); color: var(--ink); min-width: 0;
+    font: inherit; font-size: 13px; padding: 6px 10px;
+    border: 1px solid var(--line-strong); border-radius: 6px;
+    background: var(--bg); color: var(--ink); min-width: 0;
   }
-  .filters input[type="search"] { flex: 1 1 220px; }
+  .filters input:focus, .filters select:focus { outline: 2px solid var(--ink); outline-offset: -1px; }
+  .filters input[type="search"] { flex: 1 1 240px; }
   .filters label { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; }
-  .count { color: var(--muted); font-size: 13px; margin-left: auto; white-space: nowrap; }
+  .count { color: var(--faint); font-size: 12px; margin-left: auto; white-space: nowrap; }
 
-  /* ── split layout ─────────────────────────────────────────── */
-  .split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); height: calc(100vh - 106px); }
+  /* ── split ────────────────────────────────────────────────── */
+  .split { display: grid; grid-template-columns: minmax(0, 420px) minmax(0, 1fr); height: calc(100vh - 108px); }
   @media (max-width: 980px) { .split { grid-template-columns: 1fr; height: auto; } }
-
   .list { overflow-y: auto; border-right: 1px solid var(--line); }
-  .detail { overflow-y: auto; padding: 20px 24px; }
+  .detail { overflow-y: auto; padding: 26px 30px 60px; }
   @media (max-width: 980px) {
-    .list { border-right: none; border-bottom: 1px solid var(--line); max-height: 60vh; }
+    .list { border-right: 0; border-bottom: 1px solid var(--line); max-height: 55vh; }
+    .detail { padding: 20px; }
   }
 
-  table { width: 100%; border-collapse: collapse; }
-  th {
-    text-align: left; font-size: 12px; font-weight: 600; color: var(--muted);
-    padding: 8px 10px; border-bottom: 1px solid var(--line);
-    position: sticky; top: 0; background: var(--panel); cursor: pointer; white-space: nowrap;
+  /* ── list rows ────────────────────────────────────────────── */
+  .row {
+    display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 12px;
+    padding: 13px 18px; border-bottom: 1px solid var(--line); cursor: pointer;
   }
-  th:hover { color: var(--ink); }
-  td { padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
-  tbody tr { cursor: pointer; }
-  tbody tr:hover { background: var(--row-hover); }
-  tbody tr[aria-selected="true"] { background: var(--selected); }
-  .co { font-weight: 600; }
-.ti { color: var(--muted); font-size: 13px; }
-  /* Hacker News has no location field, so its postings put the entire advert
-     in one. Clamped here rather than truncated in SQL, so the detail view
-     still shows whatever the engine actually returned. */
-  .loc {
-    color: var(--muted); font-size: 13px;
+  .row:hover { background: var(--hover); }
+  .row[aria-selected="true"] { background: var(--sel); box-shadow: inset 2px 0 0 var(--ink); }
+  .row .co { font-weight: 600; letter-spacing: -0.01em; }
+  .row .role {
+    color: var(--muted); font-size: 13px; margin-top: 1px;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  /* Hacker News has no location field and puts the whole advert in one. */
+  .row .meta {
+    color: var(--faint); font-size: 12px; margin-top: 5px;
     display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical;
     overflow: hidden; overflow-wrap: anywhere;
   }
-  .role {
-    color: var(--muted); font-size: 13px;
-    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
-  }
-  .nowrap { white-space: nowrap; }
 
-  .pill {
-    display: inline-block; padding: 1px 7px; border-radius: 999px;
-    font-size: 11px; font-weight: 600; border: 1px solid var(--line);
-  }
-  .pill.good { color: var(--good); border-color: currentColor; }
-  .pill.warn { color: var(--warn); border-color: currentColor; }
-  .pill.bad { color: var(--bad); border-color: currentColor; }
-  .pill.mute { color: var(--muted); }
+  /* A five-step scale drawn as fill, so it survives without colour. */
+  .dots { letter-spacing: 1.5px; font-size: 10px; line-height: 1; white-space: nowrap; }
+  .dots b { color: var(--ink); font-weight: 400; }
+  /* The unfilled positions have to stay visible, or three dots reads as
+     "three" rather than "three out of five" and the scale loses its
+     denominator. */
+  .dots i { color: var(--faint); font-style: normal; opacity: 0.55; }
+  .dots.none { color: var(--faint); font-size: 11px; letter-spacing: 0; }
 
-  .bar { height: 5px; border-radius: 3px; background: var(--line); overflow: hidden; min-width: 54px; }
-  .bar i { display: block; height: 100%; background: var(--accent); }
+  .bar { height: 3px; background: var(--line); overflow: hidden; margin-top: 5px; }
+  .bar i { display: block; height: 100%; background: var(--ink); }
+  .ratio { font-size: 11px; color: var(--faint); margin-top: 6px; }
+
+  .tag {
+    display: inline-block; font-size: 11px; padding: 0 5px; border: 1px solid var(--line-strong);
+    border-radius: 3px; color: var(--muted); margin-left: 6px; vertical-align: 1px;
+  }
+  .tag.solid { background: var(--invert-bg); color: var(--invert-ink); border-color: var(--invert-bg); }
 
   /* ── detail ───────────────────────────────────────────────── */
-  .detail h2 { margin: 0 0 2px; font-size: 19px; letter-spacing: -0.01em; }
-  .detail .where { color: var(--muted); margin-bottom: 14px; }
-  .facts { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
-  .actions { display: flex; gap: 8px; margin-bottom: 18px; flex-wrap: wrap; }
-  .actions button, .actions a {
-    font: inherit; padding: 7px 13px; border-radius: 8px; border: 1px solid var(--line);
-    background: var(--panel); color: var(--ink); cursor: pointer; text-decoration: none;
+  .detail h2 { margin: 0 0 3px; font-size: 22px; font-weight: 600; letter-spacing: -0.025em; line-height: 1.25; }
+  .detail .where { color: var(--muted); margin-bottom: 18px; font-size: 13px; }
+  .facts {
+    display: flex; flex-wrap: wrap; gap: 0; margin-bottom: 20px;
+    border: 1px solid var(--line); border-radius: 8px; overflow: hidden;
   }
-  .actions button:hover { background: var(--row-hover); }
-  .actions .primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-  .actions .primary:hover { filter: brightness(1.08); }
+  .fact { padding: 9px 14px; border-right: 1px solid var(--line); flex: 1 1 auto; min-width: 108px; }
+  .fact:last-child { border-right: 0; }
+  .fact dt { font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--faint); }
+  .fact dd { margin: 3px 0 0; font-size: 13px; font-weight: 500; }
 
-  section.block { margin-bottom: 20px; }
+  .actions { display: flex; gap: 8px; margin-bottom: 24px; flex-wrap: wrap; }
+  .btn {
+    font: inherit; font-size: 13px; padding: 8px 15px; border-radius: 7px;
+    border: 1px solid var(--line-strong); background: var(--bg); color: var(--ink);
+    cursor: pointer; text-decoration: none; display: inline-block;
+  }
+  .btn:hover { background: var(--hover); }
+  .btn.solid { background: var(--invert-bg); color: var(--invert-ink); border-color: var(--invert-bg); }
+  .btn.solid:hover { opacity: 0.86; }
+  .btn[aria-pressed="true"] { background: var(--invert-bg); color: var(--invert-ink); border-color: var(--invert-bg); }
+
+  section.block { margin-bottom: 26px; }
   section.block h3 {
-    font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em;
-    color: var(--muted); margin: 0 0 8px;
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em;
+    color: var(--faint); margin: 0 0 10px; padding-bottom: 6px; border-bottom: 1px solid var(--line);
   }
   .chips { display: flex; flex-wrap: wrap; gap: 5px; }
-  .chip { font-size: 12px; padding: 2px 8px; border-radius: 6px; background: var(--accent-soft); color: var(--accent); }
-  .chip.miss { background: transparent; color: var(--bad); border: 1px solid currentColor; }
-  .chip.extra { background: transparent; color: var(--muted); border: 1px dashed var(--line); }
+  .chip { font-size: 12px; padding: 2px 9px; border-radius: 4px; background: var(--sunk); border: 1px solid transparent; }
+  /* Missing and spare are told apart by border, not colour. */
+  .chip.miss { background: transparent; border: 1px dashed var(--line-strong); color: var(--muted); }
+  .chip.extra { background: transparent; border: 1px dotted var(--line-strong); color: var(--faint); }
+
+  ul.plain { margin: 0; padding-left: 18px; color: var(--muted); font-size: 13px; }
+  ul.plain li { margin-bottom: 4px; }
 
   blockquote {
-    margin: 0 0 8px; padding: 6px 0 6px 12px; border-left: 3px solid var(--line);
-    color: var(--ink); font-size: 13px;
+    margin: 0 0 10px; padding: 2px 0 2px 14px; border-left: 2px solid var(--line-strong); font-size: 13px;
   }
-  blockquote.pos { border-color: var(--good); }
-  blockquote.neg { border-color: var(--bad); }
-  blockquote cite { display: block; color: var(--muted); font-style: normal; font-size: 12px; margin-top: 3px; }
+  blockquote.pos { border-left-style: solid; }
+  blockquote.neg { border-left-style: dashed; }
+  blockquote cite { display: block; color: var(--faint); font-style: normal; font-size: 11px; margin-top: 4px; }
+  blockquote b { font-weight: 600; }
 
   .desc {
-    white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px;
-    background: var(--panel); border: 1px solid var(--line); border-radius: 9px;
-    padding: 14px; max-height: 460px; overflow-y: auto;
+    white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; line-height: 1.62;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+    padding: 18px; max-height: 480px; overflow-y: auto; color: var(--muted);
   }
-  .empty { color: var(--muted); padding: 40px 24px; text-align: center; }
+  .empty { color: var(--faint); padding: 56px 24px; text-align: center; font-size: 13px; }
 
-  /* ── dashboard ────────────────────────────────────────────── */
-  .pad { padding: 22px 24px; }
-  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 24px; }
-  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 11px; padding: 14px 16px; }
-  .card b { display: block; font-size: 26px; font-weight: 650; letter-spacing: -0.02em; }
-  .card span { color: var(--muted); font-size: 12px; }
-  .wide { overflow-x: auto; }
+  /* ── dashboard & setup ────────────────────────────────────── */
+  .pad { padding: 26px 30px 60px; max-width: 1100px; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0;
+           border: 1px solid var(--line); border-radius: 9px; overflow: hidden; margin-bottom: 26px; }
+  .card { padding: 16px 18px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  .card b { display: block; font-size: 25px; font-weight: 600; letter-spacing: -0.03em; }
+  .card span { color: var(--faint); font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em; }
   .note {
-    border-left: 3px solid var(--warn); background: var(--panel);
-    padding: 10px 14px; border-radius: 0 8px 8px 0; margin-bottom: 20px; font-size: 13px;
+    border: 1px solid var(--ink); border-left-width: 3px;
+    padding: 13px 16px; border-radius: 0 7px 7px 0; margin-bottom: 24px; font-size: 13px;
   }
-  dl.cfg { display: grid; grid-template-columns: max-content 1fr; gap: 6px 18px; margin: 0; font-size: 13px; }
-  dl.cfg dt { color: var(--muted); }
+  .note b { font-weight: 600; }
+  table.data { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.data th {
+    text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--faint); font-weight: 500; padding: 8px 12px; border-bottom: 1px solid var(--line-strong);
+  }
+  table.data td { padding: 9px 12px; border-bottom: 1px solid var(--line); }
+  .wide { overflow-x: auto; }
+  dl.cfg { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 8px 22px; margin: 0; font-size: 13px; }
+  dl.cfg dt { color: var(--faint); }
   dl.cfg dd { margin: 0; overflow-wrap: anywhere; }
+
+  /* ── résumé drop zone ─────────────────────────────────────── */
+  .drop {
+    border: 1.5px dashed var(--line-strong); border-radius: 10px;
+    padding: 28px 22px; text-align: center; cursor: pointer; background: var(--panel);
+    transition: border-color .12s, background .12s;
+  }
+  .drop:hover { border-color: var(--muted); }
+  .drop.over { border-color: var(--ink); border-style: solid; background: var(--sunk); }
+  .drop strong { display: block; font-size: 14px; margin-bottom: 4px; }
+  .drop span { color: var(--faint); font-size: 12px; }
+  .drop input { display: none; }
+  .upload-status { margin-top: 12px; font-size: 13px; }
+  .upload-status.err { border-left: 3px solid var(--ink); padding-left: 10px; }
+  .spin { display: inline-block; width: 11px; height: 11px; border: 1.5px solid var(--line-strong);
+          border-top-color: var(--ink); border-radius: 50%; animation: sp .7s linear infinite; vertical-align: -1px; }
+  @keyframes sp { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
 </style>
 </head>
 <body>
@@ -198,11 +239,10 @@
 </header>
 
 <main>
-  <!-- ── Jobs ─────────────────────────────────────────────── -->
   <div class="view" id="view-jobs">
     <div class="filters">
       <input type="search" id="f-q" placeholder="Search company, title or location…">
-      <input type="text" id="f-location" placeholder="Location" size="12">
+      <input type="text" id="f-location" placeholder="Location" size="11">
       <select id="f-status">
         <option value="undecided">Undecided</option>
         <option value="">Any status</option>
@@ -211,50 +251,50 @@
       </select>
       <select id="f-score">
         <option value="">Any fit</option>
-        <option value="5">★5 only</option>
-        <option value="4">★4+</option>
-        <option value="3">★3+</option>
+        <option value="5">Excellent only</option>
+        <option value="4">Strong and up</option>
+        <option value="3">Worth a look and up</option>
+      </select>
+      <select id="f-sort">
+        <option value="score">Sort: fit</option>
+        <option value="coverage">Sort: skill overlap</option>
+        <option value="company">Sort: company</option>
+        <option value="posted">Sort: newest</option>
       </select>
       <label><input type="checkbox" id="f-remote"> Remote</label>
-      <span class="count" id="count"></span>
+      <span class="count num" id="count"></span>
     </div>
     <div class="split">
-      <div class="list">
-        <table>
-          <thead>
-            <tr>
-              <th data-sort="score">Fit</th>
-              <th data-sort="company">Company / role</th>
-              <th data-sort="coverage">Skills</th>
-              <th class="nowrap">Pay</th>
-            </tr>
-          </thead>
-          <tbody id="rows"></tbody>
-        </table>
-        <div class="empty" id="list-empty" hidden>Nothing matches these filters.</div>
-      </div>
+      <div class="list" id="list"></div>
       <div class="detail" id="detail">
-        <div class="empty">Select a role to see the full posting.</div>
+        <div class="empty">Select a role to read the full posting.</div>
       </div>
     </div>
   </div>
 
-  <!-- ── Dashboard ────────────────────────────────────────── -->
   <div class="view pad" id="view-dash" hidden>
     <div id="coverage-note"></div>
     <div class="cards" id="dash-cards"></div>
-    <section class="block">
-      <h3>Engines</h3>
-      <div class="wide"><table id="engine-table"></table></div>
-    </section>
+    <section class="block"><h3>Engines</h3>
+      <div class="wide"><table class="data" id="engine-table"></table></div></section>
   </div>
 
-  <!-- ── Setup ────────────────────────────────────────────── -->
   <div class="view pad" id="view-setup" hidden>
+    <section class="block">
+      <h3>Résumé</h3>
+      <div class="drop" id="drop" tabindex="0" role="button"
+           aria-label="Choose a résumé file, or drop one here">
+        <strong id="drop-title">Drop your résumé here, or click to choose</strong>
+        <span>PDF, DOCX, TXT or MD · up to 10 MB</span>
+        <input type="file" id="file" accept=".pdf,.docx,.txt,.md">
+      </div>
+      <div class="upload-status" id="upload-status"></div>
+      <div id="profile-skills" style="margin-top:16px"></div>
+    </section>
     <div class="note">
-      Shown read-only. Change these with <code>jobscout init</code> or
-      <code>jobscout config</code> — the CLI validates and writes
-      <code>config.toml</code>, so there is one place that can be wrong.
+      Everything below is read-only. Change it with <code>jobscout init</code> or
+      <code>jobscout config</code> — the CLI validates and writes <code>config.toml</code>,
+      so there is one place that can be wrong.
     </div>
     <div id="setup-body"></div>
   </div>
@@ -262,235 +302,262 @@
 
 <script>
 "use strict";
-
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) =>
   ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
-const state = { sort: "score", selected: null, jobs: [], loading: false };
+const state = { sort: "score", selected: null };
 
-/* ── navigation ─────────────────────────────────────────── */
 document.querySelectorAll("nav button").forEach((btn) => {
   btn.addEventListener("click", () => {
     document.querySelectorAll("nav button").forEach((b) =>
       b.setAttribute("aria-current", String(b === btn)));
-    for (const view of ["jobs", "dash", "setup"]) {
-      $("view-" + view).hidden = view !== btn.dataset.view;
-    }
+    for (const v of ["jobs", "dash", "setup"]) $("view-" + v).hidden = v !== btn.dataset.view;
     if (btn.dataset.view === "dash") loadDashboard();
     if (btn.dataset.view === "setup") loadSetup();
   });
 });
 
-/* ── jobs list ──────────────────────────────────────────── */
+/* Five steps of fill. Reads as a scale with no colour at all. */
+function dots(n, label) {
+  if (n === null || n === undefined) return `<span class="dots none">—</span>`;
+  return `<span class="dots" title="${esc(label)} ${n} of 5">` +
+    `<b>${"●".repeat(n)}</b><i>${"○".repeat(5 - n)}</i></span>`;
+}
+
 function queryString() {
   const p = new URLSearchParams();
-  const q = $("f-q").value.trim();
-  const loc = $("f-location").value.trim();
-  const status = $("f-status").value;
-  const score = $("f-score").value;
-  if (q) p.set("q", q);
-  if (loc) p.set("location", loc);
-  if (status) p.set("status", status);
-  if (score) p.set("minAiScore", score);
+  const set = (k, v) => { if (v) p.set(k, v); };
+  set("q", $("f-q").value.trim());
+  set("location", $("f-location").value.trim());
+  set("status", $("f-status").value);
+  set("minAiScore", $("f-score").value);
   if ($("f-remote").checked) p.set("remoteOnly", "1");
   p.set("sort", state.sort);
   p.set("limit", "300");
   return p.toString();
 }
 
-function fitPill(job) {
-  if (job.aiScore === null) return '<span class="pill mute">—</span>';
-  const cls = job.aiScore >= 4 ? "good" : job.aiScore >= 3 ? "warn" : "bad";
-  return `<span class="pill ${cls}">★${job.aiScore}</span>`;
-}
-
-function payPill(job) {
-  const v = job.salaryVsTarget;
-  if (!v || v === "unknown") return '<span class="pill mute">—</span>';
-  const cls = v === "below" ? "bad" : "good";
-  return `<span class="pill ${cls}">${esc(v)}</span>`;
-}
-
 async function loadJobs() {
-  if (state.loading) return;
-  state.loading = true;
-  try {
-    const res = await fetch("/api/jobs?" + queryString());
-    const data = await res.json();
-    state.jobs = data.jobs;
-    $("count").textContent = `${data.jobs.length} of ${data.total} shown`;
-    $("list-empty").hidden = data.jobs.length > 0;
+  const data = await (await fetch("/api/jobs?" + queryString())).json();
+  $("count").textContent = `${data.jobs.length.toLocaleString()} of ${data.total.toLocaleString()}`;
 
-    $("rows").innerHTML = data.jobs.map((j) => {
-      const pct = Math.round((j.coverage || 0) * 100);
-      const decided = j.reviewStatus === "approved" ? " ✓"
-        : j.reviewStatus === "rejected" ? " ✗" : "";
-      return `<tr data-id="${esc(j.id)}" aria-selected="${state.selected === j.id}">
-        <td class="nowrap">${fitPill(j)}</td>
-        <td>
-          <div class="co">${esc(j.company)}${decided}</div>
-          <div class="role">${esc(j.title)}</div>
-          <div class="loc">${esc(j.location || "—")}</div>
-        </td>
-        <td class="nowrap">
-          <div class="ti">${j.matchedRequired}/${j.totalRequired}</div>
-          <div class="bar"><i style="width:${pct}%"></i></div>
-        </td>
-        <td class="nowrap">${payPill(j)}</td>
-      </tr>`;
-    }).join("");
+  $("list").innerHTML = data.jobs.length === 0
+    ? '<div class="empty">Nothing matches these filters.</div>'
+    : data.jobs.map((j) => {
+        const pct = Math.round((j.coverage || 0) * 100);
+        const decided = j.reviewStatus === "approved" ? '<span class="tag solid">approved</span>'
+          : j.reviewStatus === "rejected" ? '<span class="tag">rejected</span>' : "";
+        const bits = [
+          j.location || "—",
+          j.remote === 1 ? "remote" : "",
+          j.salaryVsTarget && j.salaryVsTarget !== "unknown" ? "pay " + j.salaryVsTarget : "",
+        ].filter(Boolean).join(" · ");
+        return `<div class="row" data-id="${esc(j.id)}" aria-selected="${state.selected === j.id}">
+          <div>
+            ${dots(j.aiScore, "Fit")}
+            <div class="ratio num">${j.matchedRequired}/${j.totalRequired}</div>
+            <div class="bar"><i style="width:${pct}%"></i></div>
+          </div>
+          <div>
+            <div class="co">${esc(j.company)}${decided}</div>
+            <div class="role">${esc(j.title)}</div>
+            <div class="meta">${esc(bits)}</div>
+          </div>
+        </div>`;
+      }).join("");
 
-    document.querySelectorAll("#rows tr").forEach((tr) => {
-      tr.addEventListener("click", () => selectJob(tr.dataset.id));
-    });
-  } finally {
-    state.loading = false;
-  }
+  $("list").querySelectorAll(".row").forEach((el) =>
+    el.addEventListener("click", () => selectJob(el.dataset.id)));
 }
 
-document.querySelectorAll("th[data-sort]").forEach((th) => {
-  th.addEventListener("click", () => { state.sort = th.dataset.sort; loadJobs(); });
-});
+$("f-sort").addEventListener("change", (e) => { state.sort = e.target.value; loadJobs(); });
+let t;
+["f-q", "f-location"].forEach((id) => $(id).addEventListener("input", () => {
+  clearTimeout(t); t = setTimeout(loadJobs, 200);
+}));
+["f-status", "f-score", "f-remote"].forEach((id) => $(id).addEventListener("change", loadJobs));
 
-let debounce;
-["f-q", "f-location"].forEach((id) =>
-  $(id).addEventListener("input", () => {
-    clearTimeout(debounce);
-    debounce = setTimeout(loadJobs, 200);
-  }));
-["f-status", "f-score", "f-remote"].forEach((id) =>
-  $(id).addEventListener("change", loadJobs));
-
-/* ── job detail ─────────────────────────────────────────── */
 function chips(items, cls) {
   if (!items || !items.length) return "";
-  return `<div class="chips">${items.map((s) =>
-    `<span class="chip ${cls}">${esc(s)}</span>`).join("")}</div>`;
+  return `<div class="chips">${items.map((s) => `<span class="chip ${cls}">${esc(s)}</span>`).join("")}</div>`;
 }
-
-function money(job) {
-  if (job.salaryMin == null && job.salaryMax == null) return "Pay not stated";
-  const cur = job.salaryCurrency || "";
-  const lo = job.salaryMin != null ? job.salaryMin.toLocaleString() : "";
-  const hi = job.salaryMax != null ? job.salaryMax.toLocaleString() : "";
+function money(j) {
+  if (j.salaryMin == null && j.salaryMax == null) return "Not stated";
+  const lo = j.salaryMin != null ? j.salaryMin.toLocaleString() : "";
+  const hi = j.salaryMax != null ? j.salaryMax.toLocaleString() : "";
   const fig = lo && hi && lo !== hi ? `${lo}–${hi}` : lo || hi;
-  const per = job.salaryPeriod && job.salaryPeriod !== "annual" ? "/" + job.salaryPeriod : "";
-  return `${cur} ${fig}${per}`.trim();
+  return `${j.salaryCurrency || ""} ${fig}`.trim() +
+    (j.salaryPeriod && j.salaryPeriod !== "annual" ? "/" + j.salaryPeriod : "");
 }
 
 async function selectJob(id) {
   state.selected = id;
-  document.querySelectorAll("#rows tr").forEach((tr) =>
-    tr.setAttribute("aria-selected", String(tr.dataset.id === id)));
+  $("list").querySelectorAll(".row").forEach((el) =>
+    el.setAttribute("aria-selected", String(el.dataset.id === id)));
 
-  const job = await (await fetch("/api/jobs/" + encodeURIComponent(id))).json();
-  if (job.error) { $("detail").innerHTML = `<div class="empty">${esc(job.error)}</div>`; return; }
+  const j = await (await fetch("/api/jobs/" + encodeURIComponent(id))).json();
+  if (j.error) { $("detail").innerHTML = `<div class="empty">${esc(j.error)}</div>`; return; }
 
+  const fact = (label, value) => `<div class="fact"><dt>${label}</dt><dd>${value}</dd></div>`;
   const facts = [
-    fitPill(job),
-    job.wlbScore != null ? `<span class="pill">☺${job.wlbScore} work-life</span>` : "",
-    `<span class="pill mute">${esc(money(job))}</span>`,
-    job.remote === 1
-      ? `<span class="pill good">remote${job.remoteRestriction ? " · " + esc(job.remoteRestriction) : ""}</span>`
-      : job.remote === 0 ? '<span class="pill mute">on-site</span>' : "",
-    `<span class="pill mute">${esc(job.engine)}</span>`,
-    job.repostCount > 2 ? `<span class="pill warn">reposted ${job.repostCount}×</span>` : "",
-    job.descriptionComplete ? "" : '<span class="pill warn">description truncated</span>',
-  ].filter(Boolean).join("");
+    fact("Fit", dots(j.aiScore, "Fit")),
+    fact("Work-life", dots(j.wlbScore, "Work-life")),
+    fact("Skills", `<span class="num">${j.matchedRequired}/${j.totalRequired}</span>`),
+    fact("Pay", esc(money(j)) + (j.salaryVsTarget && j.salaryVsTarget !== "unknown"
+      ? ` <span class="tag">${esc(j.salaryVsTarget)} target</span>` : "")),
+    fact("Working", j.remote === 1
+      ? "Remote" + (j.remoteRestriction ? ` <span class="tag">${esc(j.remoteRestriction)}</span>` : "")
+      : j.remote === 0 ? "On-site" : "Not stated"),
+    fact("Source", esc(j.engine) + (j.repostCount > 2
+      ? ` <span class="tag">reposted ${j.repostCount}×</span>` : "")),
+  ].join("");
 
-  const evidence = (job.wlbEvidence || []).map((e) =>
+  const evidence = (j.wlbEvidence || []).map((e) =>
     `<blockquote class="${e.polarity === "positive" ? "pos" : "neg"}">${esc(e.quote)}
-       <cite>${esc(e.note)}</cite></blockquote>`).join("");
+      <cite>${e.polarity === "positive" ? "+" : "−"} ${esc(e.note)}</cite></blockquote>`).join("");
+  const flags = (items, mark) => items && items.length
+    ? `<ul class="plain">${items.map((f) => `<li>${mark} ${esc(f)}</li>`).join("")}</ul>` : "";
 
   $("detail").innerHTML = `
-    <h2>${esc(job.title)}</h2>
-    <div class="where">${esc(job.company)} · ${esc(job.location || "location not stated")}</div>
+    <h2>${esc(j.title)}</h2>
+    <div class="where">${esc(j.company)} · ${esc(j.location || "location not stated")}</div>
     <div class="facts">${facts}</div>
     <div class="actions">
-      ${job.applyUrl ? `<a class="primary" href="${esc(job.applyUrl)}" target="_blank" rel="noreferrer noopener">Open posting ↗</a>` : ""}
-      <button data-decide="approved">Approve</button>
-      <button data-decide="rejected">Reject</button>
-      ${job.reviewStatus === "approved" || job.reviewStatus === "rejected"
-        ? '<button data-decide="new">Undo</button>' : ""}
+      ${j.applyUrl ? `<a class="btn solid" href="${esc(j.applyUrl)}" target="_blank" rel="noreferrer noopener">Open posting ↗</a>` : ""}
+      <button class="btn" data-decide="approved" aria-pressed="${j.reviewStatus === "approved"}">Approve</button>
+      <button class="btn" data-decide="rejected" aria-pressed="${j.reviewStatus === "rejected"}">Reject</button>
+      ${j.reviewStatus === "approved" || j.reviewStatus === "rejected"
+        ? '<button class="btn" data-decide="new">Undo</button>' : ""}
     </div>
+    ${j.reason ? `<section class="block"><h3>Why this score</h3><p style="margin:0 0 10px">${esc(j.reason)}</p>
+      ${flags(j.concerns, "−")}</section>` : ""}
+    <section class="block"><h3>Skills you have · ${(j.matched || []).length}</h3>
+      ${chips(j.matched, "") || '<span class="empty" style="padding:0">None recorded.</span>'}</section>
+    ${(j.missing || []).length ? `<section class="block"><h3>Missing · ${j.missing.length}</h3>${chips(j.missing, "miss")}</section>` : ""}
+    ${(j.bonus || []).length ? `<section class="block"><h3>Yours, not asked for</h3>${chips(j.bonus, "extra")}</section>` : ""}
+    ${(j.redFlags || []).length || (j.greenFlags || []).length ? `<section class="block"><h3>Signals</h3>
+      ${flags(j.greenFlags, "+")}${flags(j.redFlags, "−")}</section>` : ""}
+    ${evidence ? `<section class="block"><h3>In their words</h3>${evidence}</section>` : ""}
+    <section class="block"><h3>Full posting${j.descriptionComplete ? "" : " · truncated"}</h3>
+      <div class="desc">${esc(j.description) || "No description was fetched."}</div></section>`;
 
-    ${job.reason ? `<section class="block"><h3>Why this score</h3><p>${esc(job.reason)}</p>
-      ${(job.concerns || []).length ? `<ul>${job.concerns.map((c) => `<li>${esc(c)}</li>`).join("")}</ul>` : ""}
-    </section>` : ""}
-
-    <section class="block"><h3>Skills you have (${(job.matched || []).length})</h3>
-      ${chips(job.matched, "") || '<span class="ti">None recorded.</span>'}</section>
-    ${(job.missing || []).length ? `<section class="block"><h3>Missing</h3>${chips(job.missing, "miss")}</section>` : ""}
-    ${(job.bonus || []).length ? `<section class="block"><h3>Yours, not asked for</h3>${chips(job.bonus, "extra")}</section>` : ""}
-
-    ${(job.redFlags || []).length ? `<section class="block"><h3>Red flags</h3>${chips(job.redFlags, "miss")}</section>` : ""}
-    ${(job.greenFlags || []).length ? `<section class="block"><h3>Green flags</h3>${chips(job.greenFlags, "")}</section>` : ""}
-    ${evidence ? `<section class="block"><h3>What the posting says</h3>${evidence}</section>` : ""}
-
-    <section class="block"><h3>Full posting</h3>
-      <div class="desc">${esc(job.description) || "No description was fetched."}</div></section>`;
-
-  $("detail").querySelectorAll("[data-decide]").forEach((btn) => {
+  $("detail").querySelectorAll("[data-decide]").forEach((btn) =>
     btn.addEventListener("click", async () => {
       await fetch(`/api/jobs/${encodeURIComponent(id)}/decision`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
+        method: "POST", headers: { "content-type": "application/json" },
         body: JSON.stringify({ status: btn.dataset.decide }),
       });
-      await loadJobs();
-      await selectJob(id);
-    });
-  });
+      await loadJobs(); await selectJob(id);
+    }));
 }
 
-/* ── dashboard ──────────────────────────────────────────── */
 async function loadDashboard() {
   const d = await (await fetch("/api/dashboard")).json();
   const pct = Math.round(d.scoreCoverage * 100);
-
   $("coverage-note").innerHTML = pct < 25
-    ? `<div class="note"><b>${pct}% of ranked postings have been scored</b> (${d.scored.toLocaleString()}
-       of ${d.ranked.toLocaleString()}). Skill counting alone ranks a sales role at a payments
-       company near a payments engineer — <code>jobscout score</code> is what separates them.
-       Until coverage rises, most of this list is unjudged.</div>`
-    : "";
+    ? `<div class="note"><b>${pct}% of ranked postings have been scored</b>
+       (${d.scored.toLocaleString()} of ${d.ranked.toLocaleString()}). Skill counting alone
+       ranks a sales role at a payments company near a payments engineer —
+       <code>jobscout score</code> is what separates them. Until coverage rises,
+       most of this list is unjudged.</div>` : "";
 
-  const cards = [
-    ["Jobs", d.jobs], ["Companies", d.companies], ["Ranked", d.ranked],
+  const cards = [["Jobs", d.jobs], ["Companies", d.companies], ["Ranked", d.ranked],
     ["Scored", d.scored], ["Work-life read", d.signalled], ["Boards", d.boards],
-    ["Undecided", d.pending], ["Approved", d.approved], ["Rejected", d.rejected],
-  ];
-  $("dash-cards").innerHTML = cards.map(([label, n]) =>
-    `<div class="card"><b>${Number(n || 0).toLocaleString()}</b><span>${label}</span></div>`).join("")
-    + `<div class="card"><b>$${(d.spend.total || 0).toFixed(2)}</b><span>AI spend, ${esc(d.spend.period)}</span></div>`;
+    ["Undecided", d.pending], ["Approved", d.approved], ["Rejected", d.rejected]];
+  $("dash-cards").innerHTML = cards.map(([l, n]) =>
+    `<div class="card"><b class="num">${Number(n || 0).toLocaleString()}</b><span>${l}</span></div>`).join("")
+    + `<div class="card"><b class="num">$${(d.spend.total || 0).toFixed(2)}</b><span>AI spend</span></div>`;
 
   $("engine-table").innerHTML =
-    `<thead><tr><th>Engine</th><th>Jobs</th><th>Last run</th></tr></thead><tbody>` +
-    d.engines.map((e) => {
-      const cls = e.status === "ok" ? "good" : e.status === "unknown" ? "mute" : "bad";
-      return `<tr><td>${esc(e.engine)} <span class="pill ${cls}">${esc(e.status)}</span></td>
-        <td>${e.jobs.toLocaleString()}</td>
-        <td class="ti">${esc((e.lastRun || "").replace("T", " ").slice(0, 16) || "—")}</td></tr>`;
-    }).join("") + "</tbody>";
+    `<thead><tr><th>Engine</th><th>Status</th><th>Jobs</th><th>Last run</th></tr></thead><tbody>` +
+    d.engines.map((e) => `<tr>
+      <td>${esc(e.engine)}</td>
+      <td>${e.status === "ok" ? "ok" : `<b>${esc(e.status)}</b>`}</td>
+      <td class="num">${e.jobs.toLocaleString()}</td>
+      <td style="color:var(--faint)">${esc((e.lastRun || "").replace("T", " ").slice(0, 16) || "—")}</td>
+    </tr>`).join("") + "</tbody>";
 }
 
-/* ── setup ──────────────────────────────────────────────── */
+/* ── résumé upload ──────────────────────────────────────── */
+const drop = $("drop"), fileInput = $("file"), status = $("upload-status");
+
+drop.addEventListener("click", () => fileInput.click());
+drop.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fileInput.click(); }
+});
+fileInput.addEventListener("change", () => {
+  if (fileInput.files.length) upload(fileInput.files[0]);
+});
+["dragenter", "dragover"].forEach((ev) => drop.addEventListener(ev, (e) => {
+  e.preventDefault(); drop.classList.add("over");
+}));
+["dragleave", "drop"].forEach((ev) => drop.addEventListener(ev, (e) => {
+  e.preventDefault(); drop.classList.remove("over");
+}));
+drop.addEventListener("drop", (e) => {
+  const file = e.dataTransfer.files[0];
+  if (file) upload(file);
+});
+
+async function upload(file) {
+  status.className = "upload-status";
+  status.innerHTML = `<span class="spin"></span> Reading ${esc(file.name)}…`;
+  const body = new FormData();
+  body.append("resume", file);
+  try {
+    const res = await fetch("/api/resume", { method: "POST", body });
+    const d = await res.json();
+    if (!res.ok) {
+      status.className = "upload-status err";
+      status.textContent = d.error || "Upload failed.";
+      return;
+    }
+    status.innerHTML = `Saved as <b>${esc(d.file)}</b> — ${d.words.toLocaleString()} words, ` +
+      `<b>${d.skills}</b> skills (${d.added} new, ${d.updated} updated).` +
+      (d.suspect ? " That is very little text — check it is not a scanned image." : "");
+    renderSkills(d.profile);
+    loadSetup();
+  } catch (err) {
+    status.className = "upload-status err";
+    status.textContent = "Could not reach jobscout. Is it still running?";
+  }
+}
+
+function renderSkills(skills) {
+  if (!skills || !skills.length) { $("profile-skills").innerHTML = ""; return; }
+  const byCat = {};
+  for (const s of skills) (byCat[s.category] ||= []).push(s);
+  $("profile-skills").innerHTML =
+    `<h3 style="font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--faint);
+       margin:0 0 10px;padding-bottom:6px;border-bottom:1px solid var(--line)">
+       Your skills · ${skills.length}</h3>` +
+    Object.entries(byCat).map(([cat, list]) =>
+      `<div style="margin-bottom:10px"><div style="font-size:11px;color:var(--faint);margin-bottom:4px">
+        ${esc(cat)}</div>${chips(list.map((s) => `${s.label} · ${s.level}`), "")}</div>`).join("");
+}
+
 async function loadSetup() {
-  const c = await (await fetch("/api/config")).json();
+  const [c, p] = await Promise.all([
+    (await fetch("/api/config")).json(),
+    (await fetch("/api/profile")).json(),
+  ]);
   const list = (a) => (a && a.length ? a.join(", ") : "—");
   const salary = c.search.salaryMin
     ? `${c.search.salaryCurrency} ${c.search.salaryMin.toLocaleString()} ${c.search.salaryPeriod}`
     : "no floor set";
+  $("drop-title").textContent = c.profile.resumeFile
+    ? "Replace your résumé — drop a file here, or click to choose"
+    : "Drop your résumé here, or click to choose";
+  if (!status.textContent) renderSkills(p.skills);
+
   $("setup-body").innerHTML = `
     <section class="block"><h3>Search</h3><dl class="cfg">
       <dt>Roles</dt><dd>${esc(list(c.search.roles))}</dd>
       <dt>Locations</dt><dd>${esc(list(c.search.locations))}</dd>
       <dt>Remote only</dt><dd>${c.search.remoteOnly ? "yes" : "no"}</dd>
       <dt>Salary floor</dt><dd>${esc(salary)}</dd>
-    </dl></section>
-    <section class="block"><h3>Matching</h3><dl class="cfg">
-      <dt>Threshold</dt><dd>${c.match.threshold}</dd>
+      <dt>Match threshold</dt><dd class="num">${c.match.threshold}</dd>
     </dl></section>
     <section class="block"><h3>AI</h3><dl class="cfg">
       <dt>Provider chain</dt><dd>${esc(list(c.ai.providers))}</dd>
@@ -500,11 +567,10 @@ async function loadSetup() {
     </dl></section>
     <section class="block"><h3>Engines</h3><dl class="cfg">
       <dt>Enabled</dt><dd>${esc(list(c.engines.enabled))}</dd>
-      <dt>Résumé</dt><dd>${esc(c.profile.resumeFile || "not set")}</dd>
+      <dt>Résumé file</dt><dd>${esc(c.profile.resumeFile || "not set")}</dd>
     </dl></section>`;
 }
 
-/* ── start ──────────────────────────────────────────────── */
 (async function start() {
   const d = await (await fetch("/api/dashboard")).json();
   $("subtitle").textContent =

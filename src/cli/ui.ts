@@ -31,6 +31,7 @@ export const uiCommand = defineCommand({
     const { url, stop } = createServer({
       db: db.raw,
       config,
+      paths,
       port: Number.isFinite(port) ? port : 0,
     });
 

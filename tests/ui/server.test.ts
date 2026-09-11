@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { filtersFrom } from "../../src/ui/server.ts";
+import { filtersFrom, resumeExtension } from "../../src/ui/server.ts";
 
 const at = (query: string) => filtersFrom(new URL("http://127.0.0.1/api/jobs" + query));
 
@@ -42,5 +42,36 @@ describe("filtersFrom", () => {
     expect(at("?remoteOnly=0").remoteOnly).toBe(false);
     expect(at("?remoteOnly=true").remoteOnly).toBe(false);
     expect(at("?remoteOnly=1").remoteOnly).toBe(true);
+  });
+});
+
+describe("resumeExtension", () => {
+  test("accepts the formats the extractor can read", () => {
+    expect(resumeExtension("cv.pdf")).toBe(".pdf");
+    expect(resumeExtension("CV.PDF")).toBe(".pdf");
+    expect(resumeExtension("resume.docx")).toBe(".docx");
+    expect(resumeExtension("notes.md")).toBe(".md");
+  });
+
+  test("refuses anything else rather than saving it", () => {
+    expect(resumeExtension("payload.exe")).toBeNull();
+    expect(resumeExtension("archive.zip")).toBeNull();
+    expect(resumeExtension("noextension")).toBeNull();
+  });
+
+  /** An upload with no filename crashed this with "undefined is not an object". */
+  test("survives a missing or non-string filename", () => {
+    expect(resumeExtension(undefined)).toBeNull();
+    expect(resumeExtension(null)).toBeNull();
+    expect(resumeExtension(42)).toBeNull();
+  });
+
+  /**
+   * Only the extension is ever used. The name itself must never reach the
+   * filesystem, or an upload could choose where it lands.
+   */
+  test("a traversal attempt yields only an extension", () => {
+    expect(resumeExtension("../../../../etc/passwd.pdf")).toBe(".pdf");
+    expect(resumeExtension("../../.ssh/authorized_keys")).toBeNull();
   });
 });

@@ -10,8 +10,14 @@
  * that works with no network at all.
  */
 
+import { writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import type { Database } from "bun:sqlite";
 import type { Config } from "../config/schema.ts";
+import type { Paths } from "../config/paths.ts";
+import { saveConfig } from "../config/load.ts";
+import { extractResume, resumeHeader, ResumeError } from "../profile/resume.ts";
+import { buildProfile, loadProfile } from "../skills/profile.ts";
 import {
   countJobs,
   dashboard,
@@ -29,6 +35,7 @@ const page = pageAsset as unknown as string;
 export interface UiOptions {
   db: Database;
   config: Config;
+  paths: Paths;
   /** 0 asks the operating system for any free port. */
   port?: number;
   /** Called with the final URL once listening. */
@@ -36,6 +43,29 @@ export interface UiOptions {
 }
 
 const DECISIONS = new Set(["approved", "rejected", "new"]);
+
+/** Formats `extractResume` can read. Anything else is refused before writing. */
+const RESUME_TYPES: Record<string, string> = {
+  pdf: ".pdf", docx: ".docx", txt: ".txt", md: ".md",
+};
+const MAX_RESUME_BYTES = 10 * 1024 * 1024;
+
+/**
+ * The extension to save under, from the client's filename.
+ *
+ * Only the extension is taken. The name itself never reaches the filesystem:
+ * an upload called `../../.ssh/authorized_keys` would otherwise decide where
+ * the file lands.
+ */
+export function resumeExtension(filename: unknown): string | null {
+  // Whatever the client sent, including nothing: an upload with no filename
+  // crashed this with "undefined is not an object".
+  if (typeof filename !== "string") return null;
+  const dot = filename.lastIndexOf(".");
+  if (dot < 0) return null;
+  const ext = filename.slice(dot + 1).toLowerCase();
+  return RESUME_TYPES[ext] ?? null;
+}
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -76,7 +106,10 @@ export function filtersFrom(url: URL): JobFilters {
 }
 
 export function createServer(options: UiOptions): { url: string; stop(): void } {
-  const { db, config } = options;
+  const { db, paths } = options;
+  // Reassigned when a résumé is uploaded, so the Setup view reflects the change
+  // without a restart.
+  let config = options.config;
 
   const setStatus = db.prepare(`UPDATE jobs SET review_status = ? WHERE id = ?`);
 
@@ -87,6 +120,19 @@ export function createServer(options: UiOptions): { url: string; stop(): void } 
     port: options.port ?? 0,
 
     async fetch(request) {
+      try {
+        return await route(request);
+      } catch (err) {
+        // Unhandled, this renders Bun's development error page — a stack trace
+        // into the compiled binary, served to the browser. JSON and a 500 are
+        // both more useful and less revealing.
+        const message = err instanceof Error ? err.message : String(err);
+        return json({ error: `Request failed: ${message}` }, 500);
+      }
+    },
+  });
+
+  async function route(request: Request): Promise<Response> {
       const url = new URL(request.url);
       const { pathname } = url;
 
@@ -143,9 +189,74 @@ export function createServer(options: UiOptions): { url: string; stop(): void } 
         return json({ id, status });
       }
 
+      if (pathname === "/api/profile") {
+        return json({
+          resumeFile: config.profile.resumeFile,
+          skills: loadProfile(db),
+        });
+      }
+
+      if (pathname === "/api/resume" && request.method === "POST") {
+        // Typed from the request rather than annotated: undici and the DOM
+        // disagree on FormData's iterator type, and the request's own is right.
+        let form: Awaited<ReturnType<Request["formData"]>>;
+        try {
+          form = await request.formData();
+        } catch {
+          return json({ error: "Expected a file upload" }, 400);
+        }
+        const file = form.get("resume");
+        if (!(file instanceof File)) return json({ error: "No file was sent" }, 400);
+
+        const ext = resumeExtension(file.name);
+        if (!ext) {
+          return json(
+            { error: `Unsupported format. Use ${Object.keys(RESUME_TYPES).join(", ")}.` },
+            415,
+          );
+        }
+        if (file.size === 0) return json({ error: "That file is empty" }, 400);
+        if (file.size > MAX_RESUME_BYTES) {
+          return json({ error: "That file is larger than 10 MB" }, 413);
+        }
+
+        // A fixed name, in jobscout's own directory. Uploading through the
+        // browser also sidesteps the macOS restriction that stops the CLI
+        // reading ~/Downloads at all.
+        const target = join(paths.profile, `resume${ext}`);
+        await writeFile(target, Buffer.from(await file.arrayBuffer()));
+
+        config = { ...config, profile: { ...config.profile, resumeFile: target } };
+        await saveConfig(paths, config);
+
+        try {
+          const extracted = await extractResume(target);
+          await writeFile(
+            paths.resumeText,
+            resumeHeader(`resume${ext}`) + extracted.text,
+            "utf8",
+          );
+          const result = buildProfile(db, extracted.text);
+          return json({
+            file: `resume${ext}`,
+            words: extracted.words,
+            suspect: extracted.suspect,
+            skills: result.skills.length,
+            added: result.added,
+            updated: result.updated,
+            profile: loadProfile(db),
+          });
+        } catch (err) {
+          // The file is saved and configured either way; only the reading
+          // failed, and saying which is the difference between a fixable
+          // problem and a mystery.
+          const message = err instanceof ResumeError ? err.message : String(err);
+          return json({ error: `Saved, but could not read it: ${message}` }, 422);
+        }
+      }
+
       return json({ error: "Not found" }, 404);
-    },
-  });
+  }
 
   const url = `http://127.0.0.1:${server.port}`;
   options.onReady?.(url);
