@@ -84,7 +84,7 @@ describe("upsertJobs", () => {
       )
       .get(id);
     expect(row?.review_status).toBe("approved");
-    // Existing content is left alone too — only last_seen moves.
+    // The title is left alone: a repeat sighting only refreshes location, date, apply URL and incomplete descriptions.
     expect(row?.title).toBe("Backend Engineer");
     handle.close();
   });
