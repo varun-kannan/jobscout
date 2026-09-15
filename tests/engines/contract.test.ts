@@ -669,6 +669,26 @@ describe("ashby", () => {
   });
 });
 
+describe("careerjet", () => {
+  /** The API answers 403 "Undeclared referrer" to a request without one. */
+  test("sends a Referer header on every search", async () => {
+    const fixture = FIXTURES.careerjet!;
+    const ctx = contextWith(fixture.routes, [fixture.board], fixture.secrets);
+    const inner = ctx.http;
+    const referers: Array<string | undefined> = [];
+    ctx.http = {
+      json: async <T>(url: string, options?: { headers?: Record<string, string> }) => {
+        referers.push(options?.headers?.referer);
+        return inner.json<T>(url, options as never);
+      },
+      text: inner.text,
+    };
+    await getEngine("careerjet")!.fetch(ctx);
+    expect(referers.length).toBeGreaterThan(0);
+    for (const referer of referers) expect(referer).toMatch(/^https?:\/\//);
+  });
+});
+
 describe("one failing board", () => {
   /**
    * A renamed or rate-limited board used to throw out of the engine and lose

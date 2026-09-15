@@ -1,7 +1,7 @@
 /**
  * Careerjet.
  *
- * The broadest geographic reach in the roster — 90-plus countries, with an
+ * The broadest geographic reach in the roster: 90-plus countries, with an
  * `en_IN` locale for India. Like Adzuna it is a breadth source: descriptions
  * come back as short snippets and the link redirects rather than pointing at
  * the employer.
@@ -24,6 +24,9 @@ import { parseSalary } from "../../signals/salary.ts";
 import { matchesTerms } from "../boards/filter.ts";
 
 const PAGE_SIZE = 50;
+
+/** Careerjet asks callers to say who they are; any page is accepted. */
+const REFERER = "https://github.com/varun-kannan/jobscout";
 
 interface CareerjetJob {
   title?: string;
@@ -51,7 +54,7 @@ export const careerjet: Engine = {
   ready(ctx) {
     return ctx.secrets.careerjet?.affid
       ? READY
-      : notReady("needs a Careerjet affiliate ID — free at careerjet.com/partners/api");
+      : notReady("needs a Careerjet affiliate ID; free at careerjet.com/partners/api");
   },
 
   async fetch(ctx: EngineContext): Promise<RawJob[]> {
@@ -74,6 +77,9 @@ export const careerjet: Engine = {
 
       const data = await ctx.http.json<CareerjetResponse>(url.toString(), {
         signal: ctx.signal,
+        // Without a Referer the API answers 403 "Undeclared referrer", even
+        // with a valid affiliate ID.
+        headers: { referer: REFERER },
       });
 
       if (data.error) throw new Error(`Careerjet: ${data.error}`);
