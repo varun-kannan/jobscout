@@ -348,7 +348,8 @@
         <option value="">Any company</option>
       </select>
       <select id="f-sort">
-        <option value="score">Sort: fit</option>
+        <option value="relevance">Sort: relevance</option>
+        <option value="score">Sort: AI fit</option>
         <option value="coverage">Sort: skill overlap</option>
         <option value="company">Sort: company</option>
         <option value="posted">Sort: newest</option>
@@ -421,7 +422,7 @@ const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) =>
   ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
-const state = { sort: "score", selected: null };
+const state = { sort: "relevance", selected: null };
 
 document.querySelectorAll("nav button").forEach((btn) => {
   btn.addEventListener("click", () => {

@@ -119,7 +119,7 @@ export function filtersFrom(url: URL): JobFilters {
     companyType: p.get("companyType") ?? undefined,
     liveness: p.get("liveness") ?? undefined,
     postedWithinDays: num("postedWithin"),
-    sort: (["score", "coverage", "posted", "company"] as const).includes(sort as never)
+    sort: (["relevance", "score", "coverage", "posted", "company"] as const).includes(sort as never)
       ? (sort as JobFilters["sort"])
       : undefined,
     limit: num("limit"),
@@ -204,7 +204,7 @@ export function createServer(options: UiOptions): { url: string; stop(): void } 
       }
 
       if (pathname === "/api/jobs") {
-        const filters = filtersFrom(url);
+        const filters = { ...filtersFrom(url), preferLocations: config.search.locations };
         return json({
           total: countJobs(db, filters),
           jobs: listJobs(db, filters),

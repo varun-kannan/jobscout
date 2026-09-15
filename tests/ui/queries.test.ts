@@ -127,6 +127,28 @@ describe("listJobs", () => {
     expect(countJobs(db, { postedWithinDays: 0 })).toBe(3);
   });
 
+  /** Jobs you can take come first; the score order decides within each group. */
+  test("relevance puts your locations first, then open remote, then the rest", () => {
+    db.run(`UPDATE jobs SET location = 'Seattle', remote = 0 WHERE id = 'a'`);   // ai 5
+    db.run(`UPDATE jobs SET location = 'Chennai', remote = 0 WHERE id = 'b'`);   // ai 1
+    db.run(`UPDATE jobs SET location = 'Remote', remote = 1 WHERE id = 'c'`);    // unscored
+    const ids = listJobs(db, { sort: "relevance", preferLocations: ["Chennai"] }).map((j) => j.id);
+    expect(ids).toEqual(["b", "c", "a"]);
+
+    // Without locations, relevance is the AI score order.
+    expect(listJobs(db, { sort: "relevance" }).map((j) => j.id)[0]).toBe("a");
+
+    db.run(`UPDATE jobs SET location = 'Remote', remote = 1 WHERE id = 'a'`);
+    db.run(`UPDATE jobs SET location = 'Chennai', remote = 0 WHERE id = 'b'`);
+    db.run(`UPDATE jobs SET location = 'London', remote = NULL WHERE id = 'c'`);
+  });
+
+  test("relevance composes with filters without mixing up bound values", () => {
+    db.run(`UPDATE jobs SET location = 'Chennai' WHERE id = 'b'`);
+    const ids = listJobs(db, { sort: "relevance", preferLocations: ["Chennai"], q: "Acme" }).map((j) => j.id);
+    expect(ids).toEqual(["b"]);
+  });
+
   test("remote filter keeps only postings marked remote", () => {
     expect(listJobs(db, { remoteOnly: true }).map((j) => j.id)).toEqual(["a"]);
   });

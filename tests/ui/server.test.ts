@@ -27,6 +27,7 @@ describe("filtersFrom", () => {
   test("drops a sort it does not recognise", () => {
     expect(at("?sort=score").sort).toBe("score");
     expect(at("?sort=coverage").sort).toBe("coverage");
+    expect(at("?sort=relevance").sort).toBe("relevance");
     expect(at("?sort=; DROP TABLE jobs").sort).toBeUndefined();
     expect(at("?sort=salary_min").sort).toBeUndefined();
   });

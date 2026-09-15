@@ -8,6 +8,7 @@
 
 import type { Database, SQLQueryBindings } from "bun:sqlite";
 import { rankingFreshness, currentFingerprint, type Freshness } from "../skills/fingerprint.ts";
+import { locationFitSql } from "../signals/location-fit.ts";
 
 export interface JobSummary {
   id: string;
@@ -45,7 +46,9 @@ export interface JobFilters {
   liveness?: string;
   /** Only postings published within this many days. Undated postings are excluded. */
   postedWithinDays?: number;
-  sort?: "score" | "coverage" | "posted" | "company";
+  sort?: "relevance" | "score" | "coverage" | "posted" | "company";
+  /** Your locations, for the relevance sort. Set by the server from config. */
+  preferLocations?: readonly string[];
   limit?: number;
   offset?: number;
 }
@@ -152,9 +155,20 @@ function conditions(filters: JobFilters): { sql: string; params: SQLQueryBinding
 
 export function listJobs(db: Database, filters: JobFilters = {}): JobSummary[] {
   const { sql, params } = conditions(filters);
-  const order = SORTS[filters.sort ?? "score"] ?? SORTS.score;
   const limit = Math.min(Math.max(filters.limit ?? 100, 1), 1000);
   const offset = Math.max(filters.offset ?? 0, 0);
+
+  // Relevance puts jobs you can take ahead of jobs you cannot, then uses the
+  // score order within each group. Nothing is filtered out.
+  if (filters.sort === "relevance") {
+    const fit = locationFitSql(filters.preferLocations ?? []);
+    const order = fit ? `${fit.sql} DESC, ${SORTS.score}` : SORTS.score;
+    return db
+      .query<JobSummary, SQLQueryBindings[]>(`${SUMMARY_SELECT} ${sql} ORDER BY ${order} LIMIT ? OFFSET ?`)
+      .all(...params, ...(fit?.params ?? []), limit, offset);
+  }
+
+  const order = SORTS[filters.sort ?? "score"] ?? SORTS.score;
   return db
     .query<JobSummary, SQLQueryBindings[]>(`${SUMMARY_SELECT} ${sql} ORDER BY ${order} LIMIT ? OFFSET ?`)
     .all(...params, limit, offset);
