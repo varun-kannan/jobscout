@@ -43,6 +43,8 @@ export interface JobFilters {
   status?: string;
   companyType?: string;
   liveness?: string;
+  /** Only postings published within this many days. Undated postings are excluded. */
+  postedWithinDays?: number;
   sort?: "score" | "coverage" | "posted" | "company";
   limit?: number;
   offset?: number;
@@ -96,7 +98,7 @@ function conditions(filters: JobFilters): { sql: string; params: SQLQueryBinding
     params.push(filters.company.trim());
   }
   if (typeof filters.minAiScore === "number") {
-    // A posting with no score is not a zero — it has not been judged, so it is
+    // A posting with no score is not a zero: it has not been judged, so it is
     // excluded rather than ranked last.
     sql.push(`AND s.ai_score IS NOT NULL AND s.ai_score >= ?`);
     params.push(filters.minAiScore);
@@ -106,6 +108,11 @@ function conditions(filters: JobFilters): { sql: string; params: SQLQueryBinding
     params.push(filters.minCoverage);
   }
   if (filters.remoteOnly) sql.push(`AND j.remote = 1`);
+  if (typeof filters.postedWithinDays === "number" && filters.postedWithinDays > 0) {
+    // An undated posting is not known to be recent, so a date window excludes it.
+    sql.push(`AND j.posted_at IS NOT NULL AND julianday(j.posted_at) >= julianday('now', ?)`);
+    params.push(`-${Math.floor(filters.postedWithinDays)} day`);
+  }
   if (filters.liveness?.trim()) {
     const wanted = filters.liveness.trim();
     // "unchecked" is the absence of a value; "hideClosed" is the useful default
@@ -258,7 +265,7 @@ export interface Dashboard {
   boards: number;
   engines: { engine: string; jobs: number; status: string; lastRun: string | null }[];
   spend: { period: string; total: number };
-  /** The share of ranked postings that have an AI score, 0–1. */
+  /** The share of ranked postings that have an AI score, 0-1. */
   scoreCoverage: number;
   liveness: { open: number; closed: number; gone: number; unreachable: number; unchecked: number };
   /** How much of the ranking still reflects the résumé as it stands. */

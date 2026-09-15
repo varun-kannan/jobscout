@@ -38,6 +38,12 @@ describe("filtersFrom", () => {
     expect(at("?limit=50").limit).toBe(50);
   });
 
+  test("reads a posted-within window as a number of days", () => {
+    expect(at("?postedWithin=7").postedWithinDays).toBe(7);
+    expect(at("?postedWithin=").postedWithinDays).toBeUndefined();
+    expect(at("?postedWithin=soon").postedWithinDays).toBeUndefined();
+  });
+
   test("remoteOnly is only true for an explicit 1", () => {
     expect(at("?remoteOnly=0").remoteOnly).toBe(false);
     expect(at("?remoteOnly=true").remoteOnly).toBe(false);

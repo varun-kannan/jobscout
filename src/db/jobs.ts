@@ -15,6 +15,19 @@ import type { Board } from "../engines/engine.ts";
  * discovery recognises what it already has. Falls back to the apply URL when a
  * source gives no id of its own.
  */
+/**
+ * Store posting dates as UTC ISO strings, whatever the engine returned.
+ *
+ * Engines pass dates through in their API's own format. Recruitee's
+ * "2023-10-06 13:36:06 UTC" is not a format SQLite's date functions accept, so
+ * every Recruitee job silently fell out of any date-based query.
+ */
+export function normalisePostedAt(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const time = new Date(value).getTime();
+  return Number.isNaN(time) ? null : new Date(time).toISOString();
+}
+
 export function jobId(engine: string, nativeId: string, applyUrl = ""): string {
   const basis = nativeId || applyUrl;
   const digest = createHash("sha1").update(`${engine}:${basis}`).digest("hex").slice(0, 12);
@@ -54,7 +67,7 @@ export function upsertJobs(db: Database, engine: string, jobs: RawJob[]): Upsert
   const existing = db.prepare<{ id: string }, [string]>(`SELECT id FROM jobs WHERE id = ?`);
 
   /**
-   * Some sources hand over skills already structured — Foundit ships a skill
+   * Some sources hand over skills already structured. Foundit ships a skill
    * list with synonyms, Instahyre keywords, Recruitee and RemoteOK tags. That
    * is free matching data, so it is stored on arrival rather than thrown away
    * and re-derived by an AI call later.
@@ -94,7 +107,7 @@ export function upsertJobs(db: Database, engine: string, jobs: RawJob[]): Upsert
         $salary_currency: job.salary?.currency || null,
         $salary_period: job.salary?.period ?? null,
         $employment_type: job.employmentType ?? null,
-        $posted_at: job.postedAt ?? null,
+        $posted_at: normalisePostedAt(job.postedAt),
         $first_seen: now,
         $last_seen: now,
         $raw: JSON.stringify(job.raw ?? null),

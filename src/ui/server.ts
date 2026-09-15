@@ -113,6 +113,7 @@ export function filtersFrom(url: URL): JobFilters {
     status: p.get("status") ?? undefined,
     companyType: p.get("companyType") ?? undefined,
     liveness: p.get("liveness") ?? undefined,
+    postedWithinDays: num("postedWithin"),
     sort: (["score", "coverage", "posted", "company"] as const).includes(sort as never)
       ? (sort as JobFilters["sort"])
       : undefined,
@@ -139,7 +140,7 @@ export function createServer(options: UiOptions): { url: string; stop(): void } 
       try {
         return await route(request);
       } catch (err) {
-        // Unhandled, this renders Bun's development error page — a stack trace
+        // Unhandled, this renders Bun's development error page, a stack trace
         // into the compiled binary, served to the browser. JSON and a 500 are
         // both more useful and less revealing.
         const message = err instanceof Error ? err.message : String(err);

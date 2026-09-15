@@ -102,7 +102,7 @@
   }
   .row:hover { background: var(--hover); }
   .row[aria-selected="true"] { background: var(--sel); box-shadow: inset 2px 0 0 var(--ink); }
-  /* A closed posting is still worth seeing — it explains a gap in the list —
+  /* A closed posting is still worth seeing (it explains a gap in the list),
      but it must never read as a candidate. */
   .row.dead .co, .row.dead .role { text-decoration: line-through; opacity: .55; }
   .row .co { font-weight: 600; letter-spacing: -0.01em; }
@@ -290,7 +290,7 @@
 <body>
 
 <header>
-  <div class="brand">jobscout<span id="subtitle">loading…</span></div>
+  <div class="brand">jobscout<span id="subtitle">loading...</span></div>
   <nav>
     <button data-view="jobs" aria-current="true">Jobs</button>
     <button data-view="track">Tracker<span id="track-badge"></span></button>
@@ -303,7 +303,7 @@
   <div class="view" id="view-jobs">
     <div id="stale-banner"></div>
     <div class="filters">
-      <input type="search" id="f-q" placeholder="Search company, title or location…">
+      <input type="search" id="f-q" placeholder="Search company, title or location...">
       <input type="text" id="f-location" placeholder="Location" size="11">
       <select id="f-status">
         <option value="undecided">Undecided</option>
@@ -316,6 +316,15 @@
         <option value="5">Excellent only</option>
         <option value="4">Strong and up</option>
         <option value="3">Worth a look and up</option>
+      </select>
+      <select id="f-posted" title="Posted within">
+        <option value="">Posted: any time</option>
+        <option value="1">Last 24 hours</option>
+        <option value="3">Last 3 days</option>
+        <option value="7">Last 7 days</option>
+        <option value="14">Last 14 days</option>
+        <option value="30">Last 30 days</option>
+        <option value="90">Last 90 days</option>
       </select>
       <select id="f-live">
         <option value="open-or-unknown">Hide closed</option>
@@ -336,7 +345,7 @@
       </select>
       <label><input type="checkbox" id="f-remote"> Remote</label>
       <span class="count num" id="count"></span>
-      <span class="count" style="margin-left:10px">j/k move · a approve · r reject · o open · / search</span>
+      <span class="count" style="margin-left:10px">j/k move &middot; a approve &middot; r reject &middot; o open &middot; / search</span>
     </div>
     <div class="split">
       <div class="list" id="list"></div>
@@ -370,7 +379,7 @@
       <div class="drop" id="drop" tabindex="0" role="button"
            aria-label="Choose a résumé file, or drop one here">
         <strong id="drop-title">Drop your résumé here, or click to choose</strong>
-        <span>PDF, DOCX, TXT or MD · up to 10 MB</span>
+        <span>PDF, DOCX, TXT or MD &middot; up to 10 MB</span>
         <input type="file" id="file" accept=".pdf,.docx,.txt,.md">
       </div>
       <div class="upload-status" id="upload-status"></div>
@@ -416,9 +425,20 @@ document.querySelectorAll("nav button").forEach((btn) => {
 
 /* Five steps of fill. Reads as a scale with no colour at all. */
 function dots(n, label) {
-  if (n === null || n === undefined) return `<span class="dots none">—</span>`;
+  if (n === null || n === undefined) return `<span class="dots none">\u2014</span>`;
   return `<span class="dots" title="${esc(label)} ${n} of 5">` +
     `<b>${"●".repeat(n)}</b><i>${"○".repeat(5 - n)}</i></span>`;
+}
+
+/* "3d ago" from an ISO date; blank when the engine gave no date. */
+function postedAgo(iso) {
+  if (!iso) return "";
+  const days = Math.floor((Date.now() - Date.parse(iso)) / 86400000);
+  if (!Number.isFinite(days)) return "";
+  if (days <= 0) return "today";
+  if (days === 1) return "1d ago";
+  if (days < 60) return days + "d ago";
+  return Math.floor(days / 30) + "mo ago";
 }
 
 function queryString() {
@@ -430,6 +450,7 @@ function queryString() {
   set("minAiScore", $("f-score").value);
   set("companyType", $("f-type").value);
   set("liveness", $("f-live").value);
+  set("postedWithin", $("f-posted").value);
   if ($("f-remote").checked) p.set("remoteOnly", "1");
   p.set("sort", state.sort);
   p.set("limit", "300");
@@ -449,11 +470,12 @@ async function loadJobs() {
         const decided = j.reviewStatus === "approved" ? '<span class="tag solid">approved</span>'
           : j.reviewStatus === "rejected" ? '<span class="tag">rejected</span>' : "";
         const bits = [
-          j.location || "—",
+          postedAgo(j.postedAt),
+          j.location || "\u2014",
           j.companyType && j.companyType !== "unknown" ? j.companyType : "",
           j.remote === 1 ? "remote" : "",
           j.salaryVsTarget && j.salaryVsTarget !== "unknown" ? "pay " + j.salaryVsTarget : "",
-        ].filter(Boolean).join(" · ");
+        ].filter(Boolean).join(" \u00b7 ");
         return `<div class="row ${dead ? "dead" : ""}" data-id="${esc(j.id)}" aria-selected="${state.selected === j.id}">
           <div>
             ${dots(j.aiScore, "Fit")}
@@ -478,7 +500,7 @@ let t;
 ["f-q", "f-location"].forEach((id) => $(id).addEventListener("input", () => {
   clearTimeout(t); t = setTimeout(loadJobs, 200);
 }));
-["f-status", "f-score", "f-remote", "f-type", "f-live"].forEach((id) => $(id).addEventListener("change", loadJobs));
+["f-status", "f-score", "f-remote", "f-type", "f-live", "f-posted"].forEach((id) => $(id).addEventListener("change", loadJobs));
 
 function chips(items, cls) {
   if (!items || !items.length) return "";
@@ -488,7 +510,7 @@ function money(j) {
   if (j.salaryMin == null && j.salaryMax == null) return "Not stated";
   const lo = j.salaryMin != null ? j.salaryMin.toLocaleString() : "";
   const hi = j.salaryMax != null ? j.salaryMax.toLocaleString() : "";
-  const fig = lo && hi && lo !== hi ? `${lo}–${hi}` : lo || hi;
+  const fig = lo && hi && lo !== hi ? `${lo}-${hi}` : lo || hi;
   return `${j.salaryCurrency || ""} ${fig}`.trim() +
     (j.salaryPeriod && j.salaryPeriod !== "annual" ? "/" + j.salaryPeriod : "");
 }
@@ -527,7 +549,7 @@ async function selectJob(id) {
 
   $("detail").innerHTML = `
     <h2>${esc(j.title)}</h2>
-    <div class="where">${esc(j.company)} · ${esc(j.location || "location not stated")}</div>
+    <div class="where">${esc(j.company)} \u00b7 ${esc(j.location || "location not stated")}</div>
     <div class="facts">${facts}</div>
     <div class="actions">
       ${j.applyUrl ? `<a class="btn solid" href="${esc(j.applyUrl)}" target="_blank" rel="noreferrer noopener">Open posting ↗</a>` : ""}
@@ -539,14 +561,14 @@ async function selectJob(id) {
     </div>
     ${j.reason ? `<section class="block"><h3>Why this score</h3><p style="margin:0 0 10px">${esc(j.reason)}</p>
       ${flags(j.concerns, "−")}</section>` : ""}
-    <section class="block"><h3>Skills you have · ${(j.matched || []).length}</h3>
+    <section class="block"><h3>Skills you have \u00b7 ${(j.matched || []).length}</h3>
       ${chips(j.matched, "") || '<span class="empty" style="padding:0">None recorded.</span>'}</section>
-    ${(j.missing || []).length ? `<section class="block"><h3>Missing · ${j.missing.length}</h3>${chips(j.missing, "miss")}</section>` : ""}
+    ${(j.missing || []).length ? `<section class="block"><h3>Missing \u00b7 ${j.missing.length}</h3>${chips(j.missing, "miss")}</section>` : ""}
     ${(j.bonus || []).length ? `<section class="block"><h3>Yours, not asked for</h3>${chips(j.bonus, "extra")}</section>` : ""}
     ${(j.redFlags || []).length || (j.greenFlags || []).length ? `<section class="block"><h3>Signals</h3>
       ${flags(j.greenFlags, "+")}${flags(j.redFlags, "−")}</section>` : ""}
     ${evidence ? `<section class="block"><h3>In their words</h3>${evidence}</section>` : ""}
-    <section class="block"><h3>Full posting${j.descriptionComplete ? "" : " · truncated"}</h3>
+    <section class="block"><h3>Full posting${j.descriptionComplete ? "" : " \u00b7 truncated"}</h3>
       <div class="desc">${esc(j.description) || "No description was fetched."}</div></section>`;
 
   const applied = $("detail").querySelector("[data-track]");
@@ -582,7 +604,7 @@ async function loadDashboard() {
   $("coverage-note").innerHTML = staleNote + (pct < 25
     ? `<div class="note"><b>${pct}% of ranked postings have been scored</b>
        (${d.scored.toLocaleString()} of ${d.ranked.toLocaleString()}). Skill counting alone
-       ranks a sales role at a payments company near a payments engineer —
+       ranks a sales role at a payments company near a payments engineer;
        <code>jobscout score</code> is what separates them. Until coverage rises,
        most of this list is unjudged.</div>` : "");
 
@@ -601,7 +623,7 @@ async function loadDashboard() {
       <td>${esc(e.engine)}</td>
       <td>${e.status === "ok" ? "ok" : `<b>${esc(e.status)}</b>`}</td>
       <td class="num">${e.jobs.toLocaleString()}</td>
-      <td style="color:var(--faint)">${esc((e.lastRun || "").replace("T", " ").slice(0, 16) || "—")}</td>
+      <td style="color:var(--faint)">${esc((e.lastRun || "").replace("T", " ").slice(0, 16) || "\u2014")}</td>
     </tr>`).join("") + "</tbody>";
 }
 
@@ -635,11 +657,11 @@ function renderStaleBanner() {
   $("do-rerank").addEventListener("click", async () => {
     const btn = $("do-rerank");
     btn.disabled = true;
-    $("rerank-status").innerHTML = '<span class="spin"></span> Re-ranking every posting…';
+    $("rerank-status").innerHTML = '<span class="spin"></span> Re-ranking every posting...';
     const res = await fetch("/api/rerank", { method: "POST" });
     const d = await res.json();
     $("rerank-status").textContent =
-      `${d.ranked.toLocaleString()} ranked · ${d.aboveThreshold.toLocaleString()} above threshold`;
+      `${d.ranked.toLocaleString()} ranked \u00b7 ${d.aboveThreshold.toLocaleString()} above threshold`;
     await refreshFreshness();
     await loadJobs();
   });
@@ -652,7 +674,7 @@ const track = { status: "", statuses: [], counts: {} };
 function agedCell(a) {
   const cls = a.stale ? "aged warn" : "aged";
   const label = a.daysSince === 0 ? "today" : a.daysSince + "d";
-  return `<span class="${cls}">${label}${a.stale ? " · quiet" : ""}</span>`;
+  return `<span class="${cls}">${label}${a.stale ? " \u00b7 quiet" : ""}</span>`;
 }
 
 async function loadTracker() {
@@ -680,13 +702,13 @@ async function loadTracker() {
       <td>
         <div class="co">${esc(a.company)}</div>
         <div class="sub">${esc(a.title)}</div>
-        <div class="sub">${esc(a.location || "—")}${a.submittedAt
-          ? " · applied " + esc(a.submittedAt.slice(0, 10)) : ""}</div>
+        <div class="sub">${esc(a.location || "\u2014")}${a.submittedAt
+          ? " \u00b7 applied " + esc(a.submittedAt.slice(0, 10)) : ""}</div>
       </td>
       <td><select data-act="status">${track.statuses.map((st) =>
         `<option value="${st}" ${st === a.status ? "selected" : ""}>${st}</option>`).join("")}</select></td>
       <td>${agedCell(a)}</td>
-      <td><input data-act="note" value="${esc(a.note || "")}" placeholder="Add a note…"></td>
+      <td><input data-act="note" value="${esc(a.note || "")}" placeholder="Add a note..."></td>
       <td style="text-align:right">
         ${a.applyUrl ? `<a class="link" href="${esc(a.applyUrl)}" target="_blank" rel="noreferrer noopener">open ↗</a>` : ""}
         <button class="link" data-act="remove">remove</button>
@@ -737,7 +759,7 @@ drop.addEventListener("drop", (e) => {
 
 async function upload(file) {
   status.className = "upload-status";
-  status.innerHTML = `<span class="spin"></span> Reading ${esc(file.name)}…`;
+  status.innerHTML = `<span class="spin"></span> Reading ${esc(file.name)}...`;
   const body = new FormData();
   body.append("resume", file);
   try {
@@ -748,9 +770,9 @@ async function upload(file) {
       status.textContent = d.error || "Upload failed.";
       return;
     }
-    status.innerHTML = `Saved as <b>${esc(d.file)}</b> — ${d.words.toLocaleString()} words, ` +
+    status.innerHTML = `Saved as <b>${esc(d.file)}</b>: ${d.words.toLocaleString()} words, ` +
       `<b>${d.skills}</b> skills (${d.added} new, ${d.updated} updated).` +
-      (d.suspect ? " That is very little text — check it is not a scanned image." : "");
+      (d.suspect ? " That is very little text. Check it is not a scanned image." : "");
     renderSkills(d.profile);
     loadSetup();
     // The profile just changed, so every existing ranking now describes an
@@ -770,10 +792,10 @@ function renderSkills(skills) {
   $("profile-skills").innerHTML =
     `<h3 style="font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--faint);
        margin:0 0 10px;padding-bottom:6px;border-bottom:1px solid var(--line)">
-       Your skills · ${skills.length}</h3>` +
+       Your skills \u00b7 ${skills.length}</h3>` +
     Object.entries(byCat).map(([cat, list]) =>
       `<div style="margin-bottom:10px"><div style="font-size:11px;color:var(--faint);margin-bottom:4px">
-        ${esc(cat)}</div>${chips(list.map((s) => `${s.label} · ${s.level}`), "")}</div>`).join("");
+        ${esc(cat)}</div>${chips(list.map((s) => `${s.label} \u00b7 ${s.level}`), "")}</div>`).join("");
 }
 
 let settings = null;
@@ -784,12 +806,12 @@ function field(label, html, hint) {
     <div class="err" data-err></div></div>`;
 }
 
-/** Ordered list with remove buttons — a chain's order is what it means. */
+/** Ordered list with remove buttons, because a chain's order is what it means. */
 function chainEditor(all, chosen) {
   const state = (p) => {
     const b = (providerState || []).find((x) => x.id === p);
     if (!b) return { text: "", off: false };
-    return { text: b.available ? b.detail : b.detail + " — will be skipped", off: !b.available };
+    return { text: b.available ? b.detail : b.detail + ", will be skipped", off: !b.available };
   };
   return `<div class="picked" id="chain">` +
     chosen.map((p, i) => `<div class="item ${state(p).off ? "off" : ""}" data-p="${esc(p)}">
@@ -800,7 +822,7 @@ function chainEditor(all, chosen) {
       <button data-drop="1">remove</button>
     </div>`).join("") +
     `</div><div class="row" style="margin-top:8px">
-      <select id="add-provider"><option value="">Add a provider…</option>
+      <select id="add-provider"><option value="">Add a provider...</option>
       ${all.filter((p) => !chosen.includes(p)).map((p) => `<option>${esc(p)}</option>`).join("")}
       </select></div>`;
 }
@@ -815,7 +837,7 @@ async function loadSetup() {
   settings = c;
 
   $("drop-title").textContent = c.profile.resumeFile
-    ? "Replace your résumé — drop a file here, or click to choose"
+    ? "Replace your résumé: drop a file here, or click to choose"
     : "Drop your résumé here, or click to choose";
   if (!$("upload-status").textContent) renderSkills(p.skills);
 
@@ -831,7 +853,7 @@ async function loadSetup() {
       <input type="text" id="s-currency" value="${esc(c.search.salaryCurrency || "USD")}" style="max-width:80px">
       <select id="s-period">${opts.periods.map((x) =>
         `<option ${x === c.search.salaryPeriod ? "selected" : ""}>${x}</option>`).join("")}</select>
-    </div>`, "Compared only against postings quoted in the same currency — never converted.") +
+    </div>`, "Compared only against postings quoted in the same currency, never converted.") +
     field("Match threshold", `<input type="number" id="s-threshold" step="0.01" min="0" max="1" value="${c.match.threshold}" style="max-width:120px">`,
       "Below this, a posting is not worth an AI second opinion.");
 
@@ -843,7 +865,7 @@ async function loadSetup() {
       <input type="text" id="s-budget" value="${c.ai.budget && c.ai.budget.limit ? c.ai.budget.limit : ""}" placeholder="blank for no limit" style="max-width:140px">
       <select id="s-budget-period">${opts.budgetPeriods.map((x) =>
         `<option ${x === (c.ai.budget && c.ai.budget.period) ? "selected" : ""}>${x}</option>`).join("")}</select>
-    </div>`, "Only limits the paid APIs — per-token cost is the only thing that can be counted in dollars. " +
+    </div>`, "Only limits the paid APIs, since per-token cost is the only thing that can be counted in dollars. " +
        "Claude Code and Codex CLI spend your subscription, which this cannot meter.");
 
   $("form-engines").innerHTML = field("Enabled",
@@ -916,7 +938,7 @@ $("save-settings").addEventListener("click", async () => {
     engines: [...document.querySelectorAll(".s-engine:checked")].map((c) => c.value),
   };
   document.querySelectorAll("[data-err]").forEach((e) => (e.textContent = ""));
-  $("save-status").textContent = "Saving…";
+  $("save-status").textContent = "Saving...";
 
   const res = await fetch("/api/config", {
     method: "POST", headers: { "content-type": "application/json" },
@@ -945,7 +967,7 @@ $("save-settings").addEventListener("click", async () => {
 (async function start() {
   const d = await refreshFreshness();
   $("subtitle").textContent =
-    `${d.jobs.toLocaleString()} jobs · ${d.companies.toLocaleString()} companies`;
+    `${d.jobs.toLocaleString()} jobs \u00b7 ${d.companies.toLocaleString()} companies`;
   await loadJobs();
 })();
 </script>

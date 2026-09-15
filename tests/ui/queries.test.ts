@@ -115,6 +115,18 @@ describe("listJobs", () => {
     expect(listJobs(db, { liveness: "unchecked" }).map((j) => j.id)).toEqual(["c"]);
   });
 
+  test("a date window keeps recent postings and drops old and undated ones", () => {
+    const iso = (daysAgo: number) => new Date(Date.now() - daysAgo * 86_400_000).toISOString();
+    db.run(`UPDATE jobs SET posted_at = ? WHERE id = 'a'`, [iso(2)]);
+    db.run(`UPDATE jobs SET posted_at = ? WHERE id = 'b'`, [iso(40)]);
+    db.run(`UPDATE jobs SET posted_at = NULL WHERE id = 'c'`);
+
+    expect(listJobs(db, { postedWithinDays: 7 }).map((j) => j.id)).toEqual(["a"]);
+    expect(listJobs(db, { postedWithinDays: 60 }).map((j) => j.id).sort()).toEqual(["a", "b"]);
+    // Zero or absent means no window at all.
+    expect(countJobs(db, { postedWithinDays: 0 })).toBe(3);
+  });
+
   test("remote filter keeps only postings marked remote", () => {
     expect(listJobs(db, { remoteOnly: true }).map((j) => j.id)).toEqual(["a"]);
   });
