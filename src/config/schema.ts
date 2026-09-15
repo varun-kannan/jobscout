@@ -8,14 +8,14 @@
 import { z } from "zod";
 
 export const ENGINE_IDS = [
-  // Family A — applicant tracking systems, keyless
+  // Family A, applicant tracking systems, keyless
   "greenhouse",
   "lever",
   "ashby",
   "recruitee",
   "workable",
   "smartrecruiters",
-  // Family B — job boards, keyless
+  // Family B, job boards, keyless
   "remoteok",
   "arbeitnow",
   "themuse",
@@ -23,20 +23,20 @@ export const ENGINE_IDS = [
   "himalayas",
   "jobicy",
   "hackernews",
-  // Family C — India, keyless
+  // Family C, India, keyless
   "foundit",
   "instahyre",
-  // Family D — keyed aggregators
+  // Family D, keyed aggregators
   "adzuna",
   "careerjet",
   "jooble",
-  // Family E — scraper, opt-in
+  // Family E, scraper, opt-in
   "jobspy",
 ] as const;
 
 export type EngineId = (typeof ENGINE_IDS)[number];
 
-/** Engines needing no credential and no runtime — on by default. */
+/** Engines needing no credential and no runtime, on by default. */
 export const KEYLESS_ENGINES: readonly EngineId[] = [
   "greenhouse",
   "lever",
@@ -59,7 +59,7 @@ export const SKILL_LEVELS = ["exposure", "working", "strong", "expert"] as const
 export type SkillLevel = (typeof SKILL_LEVELS)[number];
 
 export const AI_PROVIDERS = [
-  // Free with a subscription — the default, and the reason there is no key to manage.
+  // Free with a subscription, the default, and the reason there is no key to manage.
   "claude-code",
   // Free and local. No key, no spend, nothing leaves the machine.
   "ollama",
@@ -105,14 +105,15 @@ const searchSchema = z.strictObject({
   roles: z.array(z.string()).default([]),
   locations: z.array(z.string()).default([]),
   remoteOnly: z.boolean().default(false),
-  salaryCurrency: z.string().default("USD"),
+  /** Blank until you set a salary floor; nothing is compared without one. */
+  salaryCurrency: z.string().default(""),
   salaryMin: z.number().nonnegative().nullable().default(null),
   salaryMax: z.number().nonnegative().nullable().default(null),
   salaryPeriod: z.enum(["annual", "monthly", "hourly"]).default("annual"),
 });
 
 /**
- * Match weights. They must sum to 1.0 — a config where they do not is a config
+ * Match weights. They must sum to 1.0, a config where they do not is a config
  * whose scores cannot be compared against anyone else's, so it is rejected.
  */
 const matchSchema = z
@@ -152,11 +153,11 @@ const aiSchema = z.strictObject({
    */
   providers: z
     .array(z.enum(AI_PROVIDERS))
-    // Agent CLIs first: each spends a subscription you already hold rather
-    // than charging per call, so the default costs nothing. Ollama follows as
-    // the free local option. No paid provider is ever in the default.
-    .default(["claude-code", "codex-cli", "gemini-cli", "ollama"]),
-  model: z.string().default("claude-sonnet-5"),
+    // Empty until you choose. `init` offers only the backends actually
+    // installed, so nothing is used that you did not pick.
+    .default([]),
+  /** Blank means each provider's own default model. */
+  model: z.string().default(""),
   /** Per-task overrides. Anything unset uses `providers` and `model`. */
   tiers: z
     .object({
@@ -169,7 +170,8 @@ const aiSchema = z.strictObject({
 });
 
 const enginesSchema = z.strictObject({
-  enabled: z.array(z.enum(ENGINE_IDS)).default([...KEYLESS_ENGINES]),
+  /** Empty until you choose; `init` asks which to turn on. */
+  enabled: z.array(z.enum(ENGINE_IDS)).default([]),
 });
 
 export const configSchema = z.strictObject({
@@ -194,7 +196,7 @@ export const secretsSchema = z.object({
 
 export type Secrets = z.infer<typeof secretsSchema>;
 
-/** A config with every default applied — what `init` writes on a fresh install. */
+/** A config with every default applied, what `init` writes on a fresh install. */
 export function defaultConfig(): Config {
   return configSchema.parse({});
 }

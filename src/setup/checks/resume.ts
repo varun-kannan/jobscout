@@ -1,5 +1,5 @@
 /**
- * Phase 3 — the résumé, and the placeholder detection that goes with it.
+ * Phase 3, the résumé, and the placeholder detection that goes with it.
  *
  * The template check earns its place from a specific observed failure: in the
  * system this replaces, all three personal files sat untouched at their example
@@ -23,22 +23,38 @@ import { expand } from "../../config/paths.ts";
 
 const WORK_HISTORY_TEMPLATE = `<!--
 Bullets beyond what fits on your résumé, so drafting can mix and match per role.
-Write real ones — the placeholder text below is detected and refused.
+Write real ones \u2014 the placeholder text below is detected and refused.
 -->
 
-## Company — Role (YYYY–YYYY)
+## Company \u2014 Role (YYYY\u2013YYYY)
 - Bullet 1
 - Bullet 2
 - Bullet 3
 `;
 
 const COVER_STYLE_TEMPLATE = `<!--
+How your cover letters should sound, in your own words: length, tone, what to
+lead with, phrases to avoid. Drafting ignores this file until you fill it in.
+-->
+
+Length:
+Tone:
+Always:
+Never:
+`;
+
+/**
+ * The starter file earlier versions shipped. It held a ready-made style, so an
+ * untouched copy on an existing install must still count as a template rather
+ * than as the user's own voice.
+ */
+const PREVIOUS_COVER_STYLE_TEMPLATE = `<!--
 How your cover letters should sound. Tone, structure, things to avoid.
 Written in your voice, not a template with slots.
 -->
 
 Keep it to three short paragraphs. Open with the specific thing about the role
-that matches my background — no "I am writing to apply for". Close without
+that matches my background \u2014 no "I am writing to apply for". Close without
 "I look forward to hearing from you".
 `;
 
@@ -49,7 +65,7 @@ that matches my background — no "I am writing to apply for". Close without
 const PLACEHOLDER_MARKERS = [
   "bullet 1",
   "bullet 2",
-  "company — role (yyyy",
+  "company \u2014 role (yyyy",
   "company - role (yyyy",
   "your name",
   "lorem ipsum",
@@ -68,14 +84,15 @@ function normalise(text: string): string {
  * Is this file still the template we shipped?
  *
  * Marker phrases alone are not enough: a template with no obvious placeholder
- * text — the cover-letter style file, for instance — passes every marker test
+ * text, the cover-letter style file, for instance, passes every marker test
  * while being completely unedited. So the shipped template is compared directly,
  * which needs nothing from the user and cannot be fooled by reformatting.
  */
-export function looksLikeTemplate(text: string, template?: string): boolean {
+export function looksLikeTemplate(text: string, template?: string | readonly string[]): boolean {
   const body = normalise(text);
   if (body.length < 40) return true;
-  if (template && body === normalise(template)) return true;
+  const templates = template === undefined ? [] : typeof template === "string" ? [template] : template;
+  if (templates.some((t) => body === normalise(t))) return true;
   return PLACEHOLDER_MARKERS.some((marker) => body.includes(marker));
 }
 
@@ -95,7 +112,7 @@ export const resumeCheck: Check = {
           defaultYes: true,
           manual: true,
           instructions: [
-            "Re-run `jobscout init` and answer the résumé question, or set it by hand:",
+            "Upload it in Setup in the UI (run `jobscout ui`), or set it by hand:",
             "    [profile]",
             '    resumeFile = "~/Documents/your-cv.pdf"',
             `in ${ctx.paths.config}`,
@@ -131,6 +148,8 @@ function templateCheck(opts: {
   title: string;
   file: (ctx: CheckContext) => string;
   template: string;
+  /** Earlier starter files that should also count as unedited. */
+  previous?: readonly string[];
   whyItMatters: string;
 }): Check {
   return {
@@ -154,15 +173,15 @@ function templateCheck(opts: {
         });
       }
 
-      if (looksLikeTemplate(text, opts.template)) {
+      if (looksLikeTemplate(text, [opts.template, ...(opts.previous ?? [])])) {
         return caution("still the starter template", {
           detail: [opts.whyItMatters, `Edit ${path}`],
           fix: {
             label: "Open it in your editor now?",
             defaultYes: true,
             // Actually opens it. This used to print a literal `$EDITOR <path>`,
-            // which does nothing on a machine where $EDITOR is unset — the
-            // default on macOS — while the prompt promised to open the file.
+            // which does nothing on a machine where $EDITOR is unset, the
+            // default on macOS, while the prompt promised to open the file.
             async run() {
               const plan = await openInEditor(path);
               line(indent(hint(describePlan(plan, path)), 6));
@@ -183,7 +202,7 @@ export const workHistoryCheck = templateCheck({
   title: "Work history",
   file: (ctx) => ctx.paths.workHistory,
   template: WORK_HISTORY_TEMPLATE,
-  whyItMatters: "Cover letters will be generic without real bullets to draw from.",
+  whyItMatters: "Drafting ignores this file until it has your real bullets.",
 });
 
 export const coverStyleCheck = templateCheck({
@@ -191,7 +210,22 @@ export const coverStyleCheck = templateCheck({
   title: "Cover letter style",
   file: (ctx) => ctx.paths.coverLetterStyle,
   template: COVER_STYLE_TEMPLATE,
-  whyItMatters: "Drafts will sound like a template until this describes your voice.",
+  previous: [PREVIOUS_COVER_STYLE_TEMPLATE],
+  whyItMatters: "Drafting ignores this file until it describes your voice.",
 });
 
 export const profileChecks: Check[] = [resumeCheck, workHistoryCheck, coverStyleCheck];
+
+/**
+ * A profile file's contents for drafting, or "" while it is still a starter.
+ *
+ * Drafting used to send the file as written, so an untouched work history gave
+ * the model "Bullet 1, Bullet 2" as experience and a new user's letters followed
+ * a style nobody had chosen.
+ */
+export function profileTextForDrafting(text: string, kind: "workHistory" | "coverStyle"): string {
+  const templates = kind === "workHistory"
+    ? [WORK_HISTORY_TEMPLATE]
+    : [COVER_STYLE_TEMPLATE, PREVIOUS_COVER_STYLE_TEMPLATE];
+  return looksLikeTemplate(text, templates) ? "" : text;
+}

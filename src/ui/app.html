@@ -874,7 +874,7 @@ async function loadSetup() {
     field("Remote only", `<label><input type="checkbox" id="s-remote" ${c.search.remoteOnly ? "checked" : ""}> Only remote roles</label>`) +
     field("Salary floor", `<div class="row">
       <input type="text" id="s-salary" value="${c.search.salaryMin ?? ""}" placeholder="blank for none" style="max-width:160px">
-      <input type="text" id="s-currency" value="${esc(c.search.salaryCurrency || "USD")}" style="max-width:80px">
+      <input type="text" id="s-currency" value="${esc(c.search.salaryCurrency || "")}" placeholder="currency" style="max-width:90px">
       <select id="s-period">${opts.periods.map((x) =>
         `<option ${x === c.search.salaryPeriod ? "selected" : ""}>${x}</option>`).join("")}</select>
     </div>`, "Compared only against postings quoted in the same currency, never converted.") +
@@ -884,7 +884,8 @@ async function loadSetup() {
   $("form-ai").innerHTML =
     field("Provider chain", chainEditor(opts.providers, c.ai.providers || []),
       "Tried in order until one is available. Empty means run without AI.") +
-    field("Model", `<input type="text" id="s-model" value="${esc(c.ai.model || "")}" style="max-width:260px">`) +
+    field("Model", `<input type="text" id="s-model" value="${esc(c.ai.model || "")}" placeholder="blank for each provider's default" style="max-width:260px">`,
+      "Leave blank unless you need a specific model.") +
     field("Budget", `<div class="row">
       <input type="text" id="s-budget" value="${c.ai.budget && c.ai.budget.limit ? c.ai.budget.limit : ""}" placeholder="blank for no limit" style="max-width:140px">
       <select id="s-budget-period">${opts.budgetPeriods.map((x) =>

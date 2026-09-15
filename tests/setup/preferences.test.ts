@@ -13,8 +13,20 @@ function withSearch(search: Partial<Config["search"]>): Config {
   return { ...base, search: { ...base.search, ...search } };
 }
 
-function ctxFor(config: Config): CheckContext {
-  return { config } as unknown as CheckContext;
+function ctxFor(config: Config, assumeYes = false): CheckContext {
+  return { config, assumeYes } as unknown as CheckContext;
+}
+
+/** Run with stdin reporting a terminal, so a fix may ask questions. */
+async function asTerminal<T>(fn: () => Promise<T>): Promise<T> {
+  const before = Object.getOwnPropertyDescriptor(process.stdin, "isTTY");
+  Object.defineProperty(process.stdin, "isTTY", { value: true, configurable: true });
+  try {
+    return await fn();
+  } finally {
+    if (before) Object.defineProperty(process.stdin, "isTTY", before);
+    else delete (process.stdin as { isTTY?: boolean }).isTTY;
+  }
 }
 
 describe("parseList", () => {
@@ -65,7 +77,7 @@ describe("parseSalary", () => {
 
 describe("describePreferences", () => {
   test("says plainly when nothing is set", () => {
-    expect(describePreferences(withSearch({}))).toBe("no roles · no locations");
+    expect(describePreferences(withSearch({}))).toBe("no roles, no locations");
   });
 
   test("counts what is set and names the floor", () => {
@@ -87,14 +99,27 @@ describe("describePreferences", () => {
 
 describe("the preferences check", () => {
   /**
-   * An empty set is not a neutral default — engines keep everything — so this
+   * An empty set is not a neutral default, engines keep everything, so this
    * has to be visible on a first run rather than silently accepted.
    */
-  test("warns when nothing is set, and offers to fix it", async () => {
-    const result = await preferencesCheck.run(ctxFor(withSearch({})));
+  test("warns when nothing is set, and offers to fix it in a terminal", async () => {
+    const result = await asTerminal(() => preferencesCheck.run(ctxFor(withSearch({}))));
     expect(result.state).toBe("warn");
     expect(result.summary).toContain("every posting is kept");
     expect(result.fix).toBeDefined();
+  });
+
+  /** Offering a fix under `--yes` made `init --yes` stop on the first question. */
+  test("offers no fix under --yes, only how to set them later", async () => {
+    const result = await asTerminal(() => preferencesCheck.run(ctxFor(withSearch({}), true)));
+    expect(result.state).toBe("warn");
+    expect(result.fix).toBeUndefined();
+    expect(result.detail!.join(" ")).toContain("jobscout init");
+  });
+
+  test("offers no fix when nothing is attached to a terminal", async () => {
+    const result = await preferencesCheck.run(ctxFor(withSearch({})));
+    expect(result.fix).toBeUndefined();
   });
 
   /** A location alone still returns every function in that city. */

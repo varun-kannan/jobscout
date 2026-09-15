@@ -1,11 +1,12 @@
 /**
- * Phase 4 — are the enabled engines actually able to run?
+ * Phase 4: are the enabled engines actually able to run?
  *
  * Keyless engines are always ready. The five that need something each report
  * what is missing rather than failing silently at discovery time.
  */
 
 import {
+  canAsk,
   caution,
   pass,
   skipped,
@@ -13,9 +14,8 @@ import {
   type CheckContext,
   type CheckResult,
 } from "./check.ts";
-import { KEYLESS_ENGINES, engineRequirement, type EngineId } from "../../config/schema.ts";
-import { SEED_BOARDS } from "../../engines/seed-boards.ts";
-import { addBoard } from "../../db/jobs.ts";
+import { multiselect, isCancel } from "@clack/prompts";
+import { ENGINE_IDS, KEYLESS_ENGINES, engineRequirement, type EngineId } from "../../config/schema.ts";
 
 /** Does this engine have everything it needs to run right now? */
 export function engineReady(id: EngineId, ctx: CheckContext): boolean {
@@ -42,16 +42,30 @@ export const enabledEnginesCheck: Check = {
     const enabled = ctx.config.engines.enabled;
 
     if (enabled.length === 0) {
-      return caution("none enabled", {
-        detail: ["Nothing will be discovered until at least one engine is on."],
+      const detail = ["Nothing will be discovered until at least one engine is on."];
+      if (!canAsk(ctx)) {
+        return caution("none chosen", {
+          detail: [...detail, "Choose with `jobscout init` in a terminal, or in Setup in the UI."],
+        });
+      }
+      return caution("none chosen", {
+        detail,
         fix: {
-          label: "Enable the 15 keyless engines?",
+          // The picker has nothing ticked, so saying yes enables nothing by itself.
+          label: "Choose which engines to use?",
           defaultYes: true,
           async run(inner) {
-            inner.setConfig({
-              ...inner.config,
-              engines: { enabled: [...KEYLESS_ENGINES] },
+            const picked = await multiselect({
+              message: "Which job engines should jobscout search? (space to select, enter to confirm)",
+              options: ENGINE_IDS.map((id) => {
+                const needs = engineRequirement(id);
+                return { value: id, label: id, hint: needs ? `needs ${needs}` : "no key needed" };
+              }),
+              initialValues: [],
+              required: false,
             });
+            if (isCancel(picked) || picked.length === 0) return;
+            inner.setConfig({ ...inner.config, engines: { enabled: picked as EngineId[] } });
           },
         },
       });
@@ -69,7 +83,7 @@ export const enabledEnginesCheck: Check = {
     const detail = [`Keyless: ${keyless.length}`];
     for (const id of needing) {
       const ready = engineReady(id, ctx);
-      detail.push(`${ready ? "ready" : "needs"} ${id}${ready ? "" : ` — ${engineRequirement(id)}`}`);
+      detail.push(`${ready ? "ready" : "needs"} ${id}${ready ? "" : ` \u2014 ${engineRequirement(id)}`}`);
     }
 
     return blocked.length === 0 ? pass(summary, detail) : caution(summary, { detail });
@@ -98,7 +112,7 @@ export const credentialsCheck: Check = {
     };
 
     return caution(`${missing.length} missing`, {
-      detail: missing.map((id) => `${id} — ${engineRequirement(id)}`),
+      detail: missing.map((id) => `${id} \u2014 ${engineRequirement(id)}`),
       fix: {
         label: "Show where to get them?",
         defaultYes: true,
@@ -190,18 +204,14 @@ export const noBoardsYetCheck: Check = {
 
     if (count > 0) return pass(`${count} active`);
 
+    // No starter companies are added for you: which employers to follow is
+    // your choice, so this only says how to add them.
     return caution("none yet", {
       detail: [
         "ATS engines poll company boards, so they return nothing until some are known.",
+        "Add a company:            jobscout boards --add \"Company Name\"",
+        "Or find boards from jobs: jobscout boards --discover   (after a first discover)",
       ],
-      fix: {
-        label: `Add ${SEED_BOARDS.length} starter boards to get going?`,
-        defaultYes: true,
-        async run(inner) {
-          if (!inner.db) throw new Error("database not open");
-          for (const board of SEED_BOARDS) addBoard(inner.db.raw, board);
-        },
-      },
     });
   },
 };

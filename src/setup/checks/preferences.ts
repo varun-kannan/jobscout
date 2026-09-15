@@ -2,7 +2,7 @@
  * What you are actually looking for.
  *
  * `discover` passes these straight to every engine, so an empty set is not a
- * neutral default — it means no engine has an opinion and everything is kept.
+ * neutral default, it means no engine has an opinion and everything is kept.
  * A first run without them returns a few thousand postings spanning every
  * country and every function, which is indistinguishable from the tool being
  * broken.
@@ -12,7 +12,7 @@
  */
 
 import { confirm, isCancel, text } from "@clack/prompts";
-import { caution, pass, type Check, type CheckContext, type CheckResult } from "./check.ts";
+import { canAsk, caution, pass, type Check, type CheckContext, type CheckResult } from "./check.ts";
 import type { Config } from "../../config/schema.ts";
 
 /** Split a comma-separated answer into clean values. */
@@ -30,7 +30,7 @@ export function parseList(input: string): string[] {
 /**
  * Read a salary as a plain number.
  *
- * People type what they say out loud — "12,00,000", "$120k", "80 000" — so the
+ * People type what they say out loud, "12,00,000", "$120k", "80 000", so the
  * separators and the unit are stripped rather than rejected. Returns null for
  * an empty answer, which is a valid choice, and for anything with no digits.
  */
@@ -57,7 +57,7 @@ export function describePreferences(config: Config): string {
   parts.push(locations.length ? `${locations.length} location(s)` : "no locations");
   if (remoteOnly) parts.push("remote only");
   if (salaryMin) parts.push(`from ${salaryCurrency} ${salaryMin.toLocaleString()}`);
-  return parts.join(" · ");
+  return parts.join(", ");
 }
 
 async function ask(ctx: CheckContext): Promise<void> {
@@ -65,7 +65,7 @@ async function ask(ctx: CheckContext): Promise<void> {
 
   const roles = await text({
     message: "Which roles are you looking for?",
-    placeholder: "backend engineer, payments engineer, platform engineer",
+    placeholder: "comma separated job titles",
     initialValue: current.roles.join(", "),
     defaultValue: "",
   });
@@ -73,7 +73,7 @@ async function ask(ctx: CheckContext): Promise<void> {
 
   const locations = await text({
     message: "Where? (comma separated; leave blank for anywhere)",
-    placeholder: "Bengaluru, Remote, London",
+    placeholder: "comma separated cities, or Remote",
     initialValue: current.locations.join(", "),
     defaultValue: "",
   });
@@ -87,7 +87,7 @@ async function ask(ctx: CheckContext): Promise<void> {
 
   const currency = await text({
     message: "Salary currency",
-    placeholder: "USD, INR, EUR",
+    placeholder: "three-letter code",
     initialValue: current.salaryCurrency,
     defaultValue: current.salaryCurrency,
   });
@@ -95,7 +95,7 @@ async function ask(ctx: CheckContext): Promise<void> {
 
   const minimum = await text({
     message: "Minimum salary you would accept (blank to skip)",
-    placeholder: "120k · 24 LPA · 90000",
+    placeholder: "a number, e.g. 90000 or 12 LPA",
     initialValue: current.salaryMin ? String(current.salaryMin) : "",
     defaultValue: "",
   });
@@ -121,35 +121,34 @@ export const preferencesCheck: Check = {
 
   async run(ctx: CheckContext): Promise<CheckResult> {
     const { roles, locations } = ctx.config.search;
+    // `--yes` or a pipe means nobody is there to answer. Offering a fix anyway
+    // made `init --yes` stop on the first question.
+    const later = "Set them with `jobscout init` in a terminal, or in Setup in the UI.";
 
     if (roles.length === 0 && locations.length === 0) {
-      return caution("not set — every posting is kept", {
+      return caution("not set, so every posting is kept", {
         detail: [
           "Engines filter on these. With none set, discovery returns everything",
           "it can reach: every country, every function, thousands of postings.",
+          ...(canAsk(ctx) ? [] : [later]),
         ],
-        fix: {
-          label: "Set what you are looking for?",
-          defaultYes: true,
-          async run(inner) {
-            await ask(inner);
-          },
-        },
+        fix: canAsk(ctx)
+          ? { label: "Set what you are looking for?", defaultYes: true, run: ask }
+          : undefined,
       });
     }
 
     // Roles are what actually narrows a search; a location alone still returns
     // every function in that city.
     if (roles.length === 0) {
-      return caution(`${describePreferences(ctx.config)} — no roles set`, {
-        detail: ["Without roles, every function in those locations is kept."],
-        fix: {
-          label: "Add the roles you want?",
-          defaultYes: true,
-          async run(inner) {
-            await ask(inner);
-          },
-        },
+      return caution(`${describePreferences(ctx.config)}, no roles set`, {
+        detail: [
+          "Without roles, every function in those locations is kept.",
+          ...(canAsk(ctx) ? [] : [later]),
+        ],
+        fix: canAsk(ctx)
+          ? { label: "Add the roles you want?", defaultYes: true, run: ask }
+          : undefined,
       });
     }
 

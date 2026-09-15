@@ -7,10 +7,10 @@
  * it.
  *
  * Nothing is installed without being asked, and nothing that needs your
- * password is run at all — the command is printed and you run it.
+ * password is run at all, the command is printed and you run it.
  */
 
-import { isCancel, note, password, select, log as clackLog } from "@clack/prompts";
+import { isCancel, multiselect, note, password, select, log as clackLog } from "@clack/prompts";
 import type { AiProvider, Secrets } from "../config/schema.ts";
 import { commandExists } from "../ai/providers/provider.ts";
 import { OllamaClient } from "../ai/providers/ollama.ts";
@@ -26,13 +26,6 @@ export interface BackendStatus {
   free: boolean;
 }
 
-/** The chain jobscout prefers, best-and-cheapest first. */
-export const PREFERRED_CHAIN: readonly AiProvider[] = [
-  "claude-code",
-  "codex-cli",
-  "gemini-cli",
-  "ollama",
-];
 
 const INSTALL: Partial<Record<AiProvider, { label: string; commands: string[]; note?: string }>> = {
   "claude-code": {
@@ -188,18 +181,47 @@ async function collectKey(
 }
 
 /**
+ * Let the user choose among backends that are already usable.
+ *
+ * Nothing is pre-ticked. The chain is saved in the order shown, and can be
+ * reordered later from Setup in the UI. Returns null when cancelled, and an
+ * empty list when the user deliberately picks nothing.
+ */
+export async function pickBackends(
+  statuses: readonly BackendStatus[],
+): Promise<AiProvider[] | null> {
+  const usable = statuses.filter((s) => s.available);
+  if (usable.length === 0) return [];
+
+  const picked = await multiselect({
+    message: "Which AI backends should jobscout use? (space to select, enter to confirm)",
+    options: usable.map((s) => ({
+      value: s.id,
+      label: s.label,
+      hint: `${s.detail}, ${s.free ? "free" : "paid per token"}`,
+    })),
+    initialValues: [],
+    required: false,
+  });
+  if (isCancel(picked)) return null;
+  return picked as AiProvider[];
+}
+
+/**
  * Walk the user to a working backend.
  *
  * Returns the chain to persist. Called only when nothing usable was found, so
- * the common case — an already-installed CLI — never sees a prompt.
+ * the common case, an already-installed CLI, never sees a prompt.
  */
 export async function chooseBackend(
   statuses: readonly BackendStatus[],
   secrets: Secrets,
   options: { interactive: boolean } = { interactive: true },
 ): Promise<SetupOutcome> {
+  // Nothing is chosen on your behalf: every path that does not end in an
+  // explicit choice leaves the chain empty.
   const unchanged: SetupOutcome = {
-    providers: [...PREFERRED_CHAIN],
+    providers: [],
     secrets,
     withoutAi: false,
     awaitingInstall: false,
@@ -213,7 +235,7 @@ export async function chooseBackend(
     // piped output or a test run is noise, not information.
     if (process.stdout.isTTY) note(
       [
-        c.dim("No AI backend found. Continuing without one —"),
+        c.dim("No AI backend found. Continuing without one \u2014"),
         c.dim("discovery, matching and ranking are unaffected; drafting is not available."),
         "",
         c.dim("To set one up, run `jobscout init` in a terminal, or:"),
@@ -221,11 +243,7 @@ export async function chooseBackend(
       ].join("\n"),
       "No AI",
     );
-    // The chain is left intact rather than emptied. It is a preference, not a
-    // record of what happens to be installed — clearing it here would mean
-    // installing Claude Code later had no effect until `init` was run again.
-    // Nothing being available is already handled at runtime.
-    return { providers: [...PREFERRED_CHAIN], secrets, withoutAi: true, awaitingInstall: false };
+    return { providers: [], secrets, withoutAi: true, awaitingInstall: false };
   }
 
   const choice = await select({
@@ -234,15 +252,15 @@ export async function chooseBackend(
       {
         value: "claude-code",
         label: "Install Claude Code",
-        hint: "best quality · free with a Claude Pro or Max plan",
+        hint: "best quality \u00b7 free with a Claude Pro or Max plan",
       },
       {
         value: "ollama",
         label: "Install Ollama",
-        hint: "free · local · no account, no key, nothing leaves your machine",
+        hint: "free \u00b7 local \u00b7 no account, no key, nothing leaves your machine",
       },
       { value: "codex-cli", label: "Install Codex CLI", hint: "free with a ChatGPT plan" },
-      { value: "api", label: "Use an API key", hint: "paid per token · set a spend limit" },
+      { value: "api", label: "Use an API key", hint: "paid per token \u00b7 set a spend limit" },
       {
         value: "none",
         label: "Continue without AI",
@@ -254,7 +272,7 @@ export async function chooseBackend(
   if (isCancel(choice)) return { ...unchanged, withoutAi: true };
 
   if (choice === "none") {
-    clackLog.info("No AI. Matching and ranking are unaffected — only drafting is lost.");
+    clackLog.info("No AI. Matching and ranking are unaffected \u2014 only drafting is lost.");
     return { providers: [], secrets, withoutAi: true, awaitingInstall: false };
   }
 
@@ -276,8 +294,7 @@ export async function chooseBackend(
       "A paid backend is now enabled. Set a spend limit with `jobscout config --budget 5`.",
     );
     return {
-      // The CLIs stay ahead of it, so a later install is preferred automatically.
-      providers: [...PREFERRED_CHAIN, provider as AiProvider],
+      providers: [provider as AiProvider],
       secrets: updated,
       withoutAi: false,
       awaitingInstall: false,

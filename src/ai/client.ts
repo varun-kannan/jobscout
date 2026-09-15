@@ -47,7 +47,7 @@ export class NoAiError extends AiError {
   }
 }
 
-/** The budget stopped the run. Distinct from a failure — nothing is wrong. */
+/** The budget stopped the run. Distinct from a failure, nothing is wrong. */
 export class BudgetExceededError extends AiError {
   constructor(
     message: string,
@@ -158,17 +158,19 @@ class Router implements AiClient {
       if (provider && (await provider.available())) {
         return { provider, model: override.model };
       }
-      // A configured tier that is not usable falls back rather than failing —
+      // A configured tier that is not usable falls back rather than failing -
       // an unpulled Ollama model should not stop the run.
     }
 
     const provider = await this.resolve();
     if (!provider) throw new NoAiError();
 
+    // `||` rather than `??`: a blank model means "use the provider's default",
+    // and `??` would pass the empty string through as `--model ""`.
     const model =
-      override?.model ??
-      (provider.id === this.chain()[0] ? this.config.ai.model : undefined) ??
-      DEFAULT_MODELS[provider.id] ??
+      override?.model ||
+      (provider.id === this.chain()[0] ? this.config.ai.model : "") ||
+      DEFAULT_MODELS[provider.id] ||
       this.config.ai.model;
 
     return { provider, model };
@@ -188,9 +190,11 @@ class Router implements AiClient {
     if (budget.limit <= 0 || budget.period === "none") return;
 
     const override = estimate.tier ? this.config.ai.tiers[estimate.tier] : undefined;
-    const model = override?.model ?? this.config.ai.model;
+    const first = this.chain()[0];
+    const model =
+      override?.model || this.config.ai.model || (first ? DEFAULT_MODELS[first] : undefined) || "";
 
-    // Output is assumed to be roughly a quarter of input — enough to size a
+    // Output is assumed to be roughly a quarter of input, enough to size a
     // check without pretending to precision the estimate does not have.
     const inputTokens = approximateTokens("x".repeat(estimate.averageChars));
     const perCall = estimateCost(model, inputTokens, Math.ceil(inputTokens / 4)) ?? 0;

@@ -35,6 +35,7 @@ describe("applySettings", () => {
 
   test("refuses a currency that is not a three-letter code", () => {
     expect(applySettings(base(), { salaryCurrency: "rupees" }).ok).toBe(false);
+    expect(applySettings(base(), { salaryCurrency: "IN" }).ok).toBe(false);
     expect(applySettings(base(), { salaryCurrency: "inr" }).config!.search.salaryCurrency).toBe("INR");
   });
 
@@ -67,14 +68,27 @@ describe("applySettings", () => {
     expect(applySettings(base(), { budgetLimitUsd: "-1" }).ok).toBe(false);
   });
 
-  test("refuses an engine that does not exist, and an empty engine list", () => {
+  test("refuses an engine that does not exist", () => {
     expect(applySettings(base(), { engines: ["greenhouse", "monster"] }).errors!.engines)
       .toContain("monster");
-    expect(applySettings(base(), { engines: [] }).ok).toBe(false);
+  });
+
+  /** A fresh install has no engines on, so saving that state must work. */
+  test("allows turning every engine off", () => {
+    expect(applySettings(base(), { engines: [] }).config!.engines.enabled).toEqual([]);
+  });
+
+  test("a blank currency and a blank model are allowed and clear the value", () => {
+    const r = applySettings(base(), { salaryCurrency: "", model: "" });
+    expect(r.ok).toBe(true);
+    expect(r.config!.search.salaryCurrency).toBe("");
+    expect(r.config!.ai.model).toBe("");
   });
 
   test("leaves fields the patch does not mention alone", () => {
-    const before = base();
+    // Non-empty on purpose: with empty defaults this would pass vacuously.
+    const before = { ...base(), engines: { enabled: ["greenhouse" as const] },
+      ai: { ...base().ai, providers: ["claude-code" as const] } };
     const after = applySettings(before, { roles: "backend" }).config!;
     expect(after.engines.enabled).toEqual(before.engines.enabled);
     expect(after.ai.providers).toEqual(before.ai.providers);

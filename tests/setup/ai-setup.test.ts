@@ -1,26 +1,27 @@
 import { describe, expect, test } from "bun:test";
 import {
-  PREFERRED_CHAIN,
   chooseBackend,
+  pickBackends,
   probeBackends,
   renderBackends,
   type BackendStatus,
 } from "../../src/setup/ai-setup.ts";
-import { PAID_PROVIDERS, defaultConfig, type AiProvider } from "../../src/config/schema.ts";
+import { defaultConfig, type AiProvider } from "../../src/config/schema.ts";
 
-describe("the preferred chain", () => {
-  /** Free-with-subscription first: the default must never cost anything. */
-  test("contains no paid provider", () => {
-    for (const paid of PAID_PROVIDERS) expect(PREFERRED_CHAIN).not.toContain(paid);
+describe("a fresh install", () => {
+  /** Nothing is chosen on a new user's behalf. */
+  test("has no AI provider selected", () => {
+    expect(defaultConfig().ai.providers).toEqual([]);
   });
+});
 
-  test("puts Claude Code first and Ollama last", () => {
-    expect(PREFERRED_CHAIN[0]).toBe("claude-code");
-    expect(PREFERRED_CHAIN[PREFERRED_CHAIN.length - 1]).toBe("ollama");
-  });
-
-  test("is what a fresh install ships with", () => {
-    expect(defaultConfig().ai.providers).toEqual([...PREFERRED_CHAIN]);
+describe("pickBackends", () => {
+  /** Only usable backends are offered; with none, there is nothing to ask. */
+  test("returns an empty choice without prompting when nothing is usable", async () => {
+    const statuses: BackendStatus[] = [
+      { id: "claude-code", label: "Claude Code", available: false, detail: "not installed", free: true },
+    ];
+    expect(await pickBackends(statuses)).toEqual([]);
   });
 });
 
@@ -84,15 +85,10 @@ describe("chooseBackend, non-interactively", () => {
     expect(outcome.awaitingInstall).toBe(false);
   });
 
-  /**
-   * The chain is a preference, not a record of what happens to be installed.
-   * Emptying it here meant a scripted `init --yes` on a machine with no backend
-   * wrote `providers = []`, so installing Claude Code afterwards had no effect
-   * until `init` was run a second time.
-   */
-  test("leaves the preferred chain intact for a later install", async () => {
+  /** A scripted run must not pick providers on the user's behalf. */
+  test("chooses no providers", async () => {
     const outcome = await chooseBackend(await probeBackends({}), {}, { interactive: false });
-    expect(outcome.providers).toEqual([...PREFERRED_CHAIN]);
+    expect(outcome.providers).toEqual([]);
   });
 
   test("installs nothing and stores nothing", async () => {

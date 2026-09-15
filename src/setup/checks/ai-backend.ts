@@ -1,25 +1,21 @@
 /**
- * Phase 2 — is there an AI backend, and which one.
+ * Phase 2: is there an AI backend, and which one.
  *
- * Replaces an earlier Claude-Code-only check. The order matters: agent CLIs
- * are preferred because they spend a subscription you already hold rather than
- * charging per call, Ollama next because it is free and local, and a paid API
- * only when you ask for one.
- *
- * The common case — a CLI already installed — passes silently. The prompt only
- * appears when nothing is usable.
+ * Nothing is chosen for you. A fresh install has an empty chain, and this check
+ * offers only the backends that are actually usable on this machine, with none
+ * pre-ticked. `--yes` picks nothing.
  */
 
 import {
   caution,
+  canAsk,
   pass,
-  skipped,
   type Check,
   type CheckContext,
   type CheckResult,
 } from "./check.ts";
 import { PAID_PROVIDERS } from "../../config/schema.ts";
-import { chooseBackend, probeBackends, renderBackends } from "../ai-setup.ts";
+import { chooseBackend, pickBackends, probeBackends, renderBackends } from "../ai-setup.ts";
 
 export const aiBackendCheck: Check = {
   id: "ai-backend",
@@ -28,15 +24,36 @@ export const aiBackendCheck: Check = {
 
   async run(ctx: CheckContext): Promise<CheckResult> {
     const configured = ctx.config.ai.providers;
+    const statuses = await probeBackends(ctx.secrets);
 
     if (configured.length === 0) {
-      return skipped("no-AI mode", [
-        "Discovery, matching and ranking all work. Drafting does not.",
-        "Re-run `jobscout init` to set one up.",
-      ]);
+      const usable = statuses.filter((s) => s.available);
+      if (usable.length > 0) {
+        const detail = [
+          ...renderBackends(usable).split("\n"),
+          "Discovery, matching and ranking work without one. Scoring and drafting do not.",
+        ];
+        if (!canAsk(ctx)) {
+          return caution("none chosen", {
+            detail: [...detail, "Choose with `jobscout init` in a terminal, or in Setup in the UI."],
+          });
+        }
+        return caution("none chosen", {
+          detail,
+          fix: {
+            // The picker has nothing ticked, so saying yes chooses nothing by itself.
+            label: "Choose which of these to use?",
+            defaultYes: true,
+            async run(inner) {
+              const picked = await pickBackends(statuses);
+              if (picked === null || picked.length === 0) return;
+              inner.setConfig({ ...inner.config, ai: { ...inner.config.ai, providers: picked } });
+            },
+          },
+        });
+      }
     }
 
-    const statuses = await probeBackends(ctx.secrets);
     const byId = new Map(statuses.map((s) => [s.id, s]));
 
     // The first configured backend that is actually usable.
@@ -50,7 +67,7 @@ export const aiBackendCheck: Check = {
         others.length > 0
           ? [`fallbacks: ${others.map((s) => `${s.label} (${s.detail})`).join(", ")}`]
           : undefined;
-      return pass(`${active.label} — ${active.detail}`, detail);
+      return pass(`${active.label} \u2014 ${active.detail}`, detail);
     }
 
     return caution("none available", {
@@ -64,16 +81,7 @@ export const aiBackendCheck: Check = {
             interactive: !inner.assumeYes && process.stdin.isTTY === true,
           });
 
-          if (outcome.withoutAi) {
-            // Only an explicit choice empties the chain. A scripted run that
-            // simply found nothing keeps its preferences, so installing a
-            // backend later is enough on its own.
-            inner.setConfig({
-              ...inner.config,
-              ai: { ...inner.config.ai, providers: outcome.providers },
-            });
-            return;
-          }
+          if (outcome.withoutAi) return;
 
           inner.setConfig({
             ...inner.config,
@@ -82,7 +90,7 @@ export const aiBackendCheck: Check = {
           if (outcome.secrets !== inner.secrets) inner.setSecrets(outcome.secrets);
 
           // A paid backend with no ceiling is worth defaulting rather than
-          // leaving open — it can be raised, but not accidentally left off.
+          // leaving open, it can be raised, but not accidentally left off.
           const paid = outcome.providers.some((p) => PAID_PROVIDERS.includes(p));
           if (paid && inner.config.ai.budget.limit === 0) {
             inner.setConfig({

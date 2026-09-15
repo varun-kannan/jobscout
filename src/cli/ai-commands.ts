@@ -17,6 +17,7 @@ import { rankAll } from "../skills/rank.ts";
 import { labelOf } from "../skills/canonical.ts";
 import type { Config } from "../config/schema.ts";
 import { c, hint, line, ok, pad, warn } from "../output/theme.ts";
+import { profileTextForDrafting } from "../setup/checks/resume.ts";
 
 async function open(root?: string): Promise<{
   paths: Paths;
@@ -48,11 +49,11 @@ async function open(root?: string): Promise<{
  */
 function reportBudgetStop(err: BudgetExceededError): void {
   line();
-  line(warn("Stopped before this stage — the spend limit would be exceeded."));
+  line(warn("Stopped before this stage \u2014 the spend limit would be exceeded."));
   line(`  ${c.dim(err.verdict.reason ?? "")}`);
   line(
     `  ${c.dim(`estimated so far: ${formatUsd(err.verdict.spent)} of ${formatUsd(err.verdict.limit)}` +
-      ` · this stage: ~${formatUsd(err.verdict.projected)}`)}`,
+      ` \u00b7 this stage: ~${formatUsd(err.verdict.projected)}`)}`,
   );
   line();
   line(hint("  Nothing was left half-finished. To continue:"));
@@ -76,7 +77,7 @@ function report(label: string, summary: StageSummary): void {
   for (const err of summary.errors) line(`    ${c.dim(err.slice(0, 110))}`);
 }
 
-/** A compact profile for the model — the whole résumé would waste the window. */
+/** A compact profile for the model, the whole résumé would waste the window. */
 function profileSummary(db: DbHandle): string {
   const skills = loadProfile(db.raw);
   const byCategory = new Map<string, string[]>();
@@ -119,8 +120,8 @@ export const enrichCommand = defineCommand({
         secrets,
       });
       line(
-        `  ${summary.candidates} truncated · ${summary.boardsQueried} board(s) queried · ` +
-          `${c.bold(String(summary.enriched))} completed · ${summary.unmatched} left as-is`,
+        `  ${summary.candidates} truncated \u00b7 ${summary.boardsQueried} board(s) queried \u00b7 ` +
+          `${c.bold(String(summary.enriched))} completed \u00b7 ${summary.unmatched} left as-is`,
       );
       line();
     } finally {
@@ -256,9 +257,9 @@ export const signalsCommand = defineCommand({
             r.repost_count > 2 ? `reposted ${r.repost_count}x` : "",
           ].filter(Boolean);
           line(
-            `  ${c.bold(r.wlb_score === null ? " –" : "☺" + r.wlb_score)} ` +
+            `  ${c.bold(r.wlb_score === null ? " \u2013" : "☺" + r.wlb_score)} ` +
               `${pad(r.company.slice(0, 16), 17)}${pad(r.title.slice(0, 32), 33)}` +
-              c.dim(notes.join(" · ")),
+              c.dim(notes.join(" \u00b7 ")),
           );
         }
       }
@@ -328,8 +329,10 @@ export const draftCommand = defineCommand({
       }
 
       const profile = profileSummary(db);
-      const workHistory = await readIfPresent(paths.workHistory);
-      const styleNotes = await readIfPresent(paths.coverLetterStyle);
+      // Unedited starter files are dropped, so placeholder bullets and a
+      // style nobody chose never reach the model.
+      const workHistory = profileTextForDrafting(await readIfPresent(paths.workHistory), "workHistory");
+      const styleNotes = profileTextForDrafting(await readIfPresent(paths.coverLetterStyle), "coverStyle");
       const answerBank = db.raw
         .query<{ question: string; answer: string }, []>(
           `SELECT question, answer FROM answers ORDER BY times_used DESC LIMIT 20`,
@@ -337,7 +340,7 @@ export const draftCommand = defineCommand({
         .all();
 
       line();
-      line(c.dim(`Drafting ${jobs.length} job(s)…`));
+      line(c.dim(`Drafting ${jobs.length} job(s)\u2026`));
 
       let done = 0;
       let failed = 0;
@@ -371,7 +374,7 @@ export const draftCommand = defineCommand({
             draft.answers.map((a) => `## ${a.question}\n\n${a.answer}`).join("\n\n"),
             "utf8",
           );
-          // Gaps are recorded, never papered over — a guessed personal detail
+          // Gaps are recorded, never papered over, a guessed personal detail
           // in a job application is worse than a visible blank.
           if (draft.missingInformation.length) {
             await writeFile(
@@ -426,31 +429,31 @@ export const runCommand = defineCommand({
       const hasAi = await ai.available();
 
       line();
-      line(c.dim("Enriching truncated postings…"));
+      line(c.dim("Enriching truncated postings\u2026"));
       const enriched = await enrichSnippets(db.raw, { http: createHttpClient(), config, secrets });
       line(`  ${enriched.enriched} completed from ${enriched.boardsQueried} board(s)`);
 
       if (hasAi) {
         line();
-        line(c.dim("Reading postings…"));
+        line(c.dim("Reading postings\u2026"));
         report("normalise", await normaliseJobs(db.raw, ai, { limit: 60 }));
         report("skills", await extractJobSkills(db.raw, ai, { limit: 60 }));
       } else {
         line();
-        line(c.dim("No AI — using the deterministic extractor."));
+        line(c.dim("No AI \u2014 using the deterministic extractor."));
       }
 
       line();
-      line(c.dim("Matching…"));
+      line(c.dim("Matching\u2026"));
       const ranked = rankAll(db.raw, config, { onlyNew: false });
       line(
-        `  ${ranked.ranked} ranked · ${ranked.aboveThreshold} above threshold` +
-          (ranked.skipped ? c.dim(` · ${ranked.skipped} had no requirements`) : ""),
+        `  ${ranked.ranked} ranked \u00b7 ${ranked.aboveThreshold} above threshold` +
+          (ranked.skipped ? c.dim(` \u00b7 ${ranked.skipped} had no requirements`) : ""),
       );
 
       if (hasAi) {
         line();
-        line(c.dim("Scoring…"));
+        line(c.dim("Scoring\u2026"));
         report(
           "score",
           await scoreJobs(db.raw, ai, {
@@ -461,7 +464,7 @@ export const runCommand = defineCommand({
         );
 
         line();
-        line(c.dim("Reading signals…"));
+        line(c.dim("Reading signals\u2026"));
         report(
           "signals",
           await computeSignals(db.raw, ai, {

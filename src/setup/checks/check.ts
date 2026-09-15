@@ -3,7 +3,7 @@
  *
  * A check knows how to detect one condition and, where possible, repair it.
  * Because `init` is both first-run setup and later repair, every requirement is
- * expressed exactly once here and both paths get it automatically — there is no
+ * expressed exactly once here and both paths get it automatically, there is no
  * way for "what setup installs" and "what repair verifies" to drift apart.
  *
  * A check never repairs anything on its own. It reports, and the runner asks.
@@ -20,7 +20,7 @@ export type CheckState =
   | "fail"
   /** Requirement not met, but the tool still runs with reduced capability. */
   | "warn"
-  /** Deliberately not configured — an optional engine left off, say. */
+  /** Deliberately not configured, an optional engine left off, say. */
   | "skip";
 
 export interface CheckResult {
@@ -39,7 +39,7 @@ export interface Fix {
   /** Default answer when the user just presses enter. */
   defaultYes: boolean;
   /**
-   * True when the fix cannot be performed by jobscout — it needs the user's
+   * True when the fix cannot be performed by jobscout, it needs the user's
    * password, a browser, or a decision only they can make. The runner prints
    * `instructions` instead of calling `run`.
    */
@@ -53,7 +53,7 @@ export interface CheckContext {
   paths: Paths;
   config: Config;
   secrets: Secrets;
-  /** Null before the database exists — the database check creates it. */
+  /** Null before the database exists, the database check creates it. */
   db: DbHandle | null;
   /** True when running with --yes; suppresses prompts and accepts defaults. */
   assumeYes: boolean;
@@ -71,7 +71,7 @@ export interface Check {
   title: string;
   /** Which phase of `init` this belongs to. */
   phase: Phase;
-  /** Skip entirely when this returns false — e.g. Python only if JobSpy is on. */
+  /** Skip entirely when this returns false, e.g. Python only if JobSpy is on. */
   applies?(ctx: CheckContext): boolean;
   run(ctx: CheckContext): Promise<CheckResult>;
 }
@@ -95,6 +95,14 @@ export const PHASE_TITLES: Record<Phase, string> = {
   boards: "Boards",
   verification: "Verification",
 };
+
+/**
+ * Whether a fix may ask questions. `--yes` and a non-terminal both mean nobody
+ * is there to answer, so those runs offer instructions instead of a picker.
+ */
+export function canAsk(ctx: CheckContext): boolean {
+  return !ctx.assumeYes && process.stdin.isTTY === true;
+}
 
 /* Small constructors so checks read as declarations rather than object literals. */
 

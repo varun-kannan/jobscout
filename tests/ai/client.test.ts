@@ -44,7 +44,7 @@ describe("provider chain", () => {
   /**
    * Only keyless API providers are used here. Naming an agent CLI would make
    * the result depend on whether the machine running the tests happens to have
-   * it installed — and a jobscout developer usually does, so the assertion
+   * it installed, and a jobscout developer usually does, so the assertion
    * passed only where Claude Code was absent.
    */
   test("a chain of unavailable providers reports unavailable, not an error", async () => {
@@ -131,6 +131,19 @@ describe("budget authorisation", () => {
     handle.close();
   });
 
+  /**
+   * A blank model means the provider's default. Priced as blank it was unknown,
+   * unknown costs count as zero, and the limit was silently never enforced.
+   */
+  test("a blank model is priced as the provider's default, so the limit still holds", () => {
+    const { ai: c, handle } = client(
+      { providers: ["anthropic"], model: "", budget: { limit: 0.01, period: "monthly" } },
+      { anthropic: { apiKey: "sk-test" } },
+    );
+    expect(() => c.authoriseStage({ calls: 500, averageChars: 12_000 })).toThrow(BudgetExceededError);
+    handle.close();
+  });
+
   test("the refusal names the command that raises the limit", () => {
     const { ai: c, handle } = ai(0.001);
     try {
@@ -181,7 +194,7 @@ describe("response parsing", () => {
   });
 
   test("recovers JSON surrounded by prose", () => {
-    expect(parseJson('Sure! {"a":1} — anything else?')).toEqual({ a: 1 });
+    expect(parseJson('Sure! {"a":1} \u2014 anything else?')).toEqual({ a: 1 });
   });
 
   test("returns undefined when there is no JSON at all", () => {

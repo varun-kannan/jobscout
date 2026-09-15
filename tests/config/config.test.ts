@@ -43,16 +43,23 @@ describe("paths", () => {
 });
 
 describe("config defaults", () => {
-  test("enables exactly the keyless engines", () => {
-    const cfg = defaultConfig();
-    expect(cfg.engines.enabled).toEqual([...KEYLESS_ENGINES]);
-    expect(cfg.engines.enabled).toHaveLength(15);
+  /** Nothing is chosen for a new user: engines, providers, model and currency start empty. */
+  test("enables no engines until you choose", () => {
+    expect(defaultConfig().engines.enabled).toEqual([]);
   });
 
-  test("defaults to the free CLI chain, Claude Code first", () => {
+  test("chooses no AI provider or model until you do", () => {
     const ai = defaultConfig().ai;
-    expect(ai.providers[0]).toBe("claude-code");
-    expect(ai.providers).toContain("ollama");
+    expect(ai.providers).toEqual([]);
+    expect(ai.model).toBe("");
+  });
+
+  test("sets no salary currency until you set a floor", () => {
+    expect(defaultConfig().search.salaryCurrency).toBe("");
+  });
+
+  test("the keyless engine list still exists for labelling", () => {
+    expect(KEYLESS_ENGINES.length).toBeGreaterThan(0);
   });
 
   /** The default must never be able to spend money without being asked. */

@@ -201,15 +201,12 @@ so a broken source is never mistaken for an empty one.
 
 ## AI backends
 
-Seven backends behind one interface, tried in order. The default chain costs nothing:
+Seven backends behind one interface, tried in the order you choose. **None is selected on a
+fresh install.** `init` lists the backends that are actually usable on your machine, with nothing
+ticked, and saves only what you pick. You can reorder or change the chain later in Setup in the UI.
 
-```
-claude-code → codex-cli → gemini-cli → ollama
-```
-
-Agent CLIs come first because each spends a subscription you already hold rather than charging per
-call; Ollama is free and local. **No paid provider is ever in the default** — there is a test
-asserting it.
+Agent CLIs such as Claude Code and Codex spend a subscription you already hold rather than charging
+per call; Ollama is free and local. A paid API is only used if you add it yourself.
 
 If none is available, `init` shows what it found and offers to set one up:
 
@@ -226,7 +223,8 @@ If none is available, `init` shows what it found and offers to set one up:
 ```
 
 Installs are never run for you — the command is printed and you run it. A scripted run
-(`--yes`, or piped output) never blocks on the menu; it continues without AI.
+(`--yes`, or piped output) never blocks on a menu and never picks anything for you: providers,
+engines and search preferences are left empty, and `init` says how to set them later.
 
 ### Cost control
 

@@ -64,7 +64,7 @@ function optionalNumber(value: unknown): number | null | undefined {
 /**
  * Merge a patch into the config and validate the result.
  *
- * Nothing is written here — the caller persists only when this succeeds, so a
+ * Nothing is written here: the caller persists only when this succeeds, so a
  * rejected edit leaves config.toml untouched.
  */
 export function applySettings(current: Config, patch: SettingsPatch): PatchResult {
@@ -100,8 +100,10 @@ export function applySettings(current: Config, patch: SettingsPatch): PatchResul
 
   if (patch.salaryCurrency !== undefined) {
     const code = String(patch.salaryCurrency).trim().toUpperCase();
-    if (!/^[A-Z]{3}$/.test(code)) errors.salaryCurrency = "Use a three-letter code, e.g. INR";
-    else next.search.salaryCurrency = code;
+    // Blank is allowed: it is how a fresh install starts, with no floor to compare.
+    if (code !== "" && !/^[A-Z]{3}$/.test(code)) {
+      errors.salaryCurrency = "Use a three-letter code, or leave it blank";
+    } else next.search.salaryCurrency = code;
   }
 
   if (patch.salaryPeriod !== undefined) {
@@ -124,15 +126,15 @@ export function applySettings(current: Config, patch: SettingsPatch): PatchResul
     else {
       const unknown = list.filter((p) => !(AI_PROVIDERS as readonly string[]).includes(p));
       if (unknown.length) errors.providers = `Not a provider: ${unknown.join(", ")}`;
-      // An empty chain is a real choice — it means run without AI — so it is
+      // An empty chain is a real choice (it means run without AI), so it is
       // allowed, unlike a chain naming something that does not exist.
       else next.ai.providers = list as Config["ai"]["providers"];
     }
   }
 
   if (patch.model !== undefined) {
-    const model = String(patch.model).trim();
-    if (model) next.ai.model = model;
+    // Blank clears it, which means each provider's own default model.
+    next.ai.model = String(patch.model).trim();
   }
 
   if (patch.budgetLimitUsd !== undefined) {
@@ -156,8 +158,8 @@ export function applySettings(current: Config, patch: SettingsPatch): PatchResul
     if (list === null) errors.engines = "Expected a list of engines";
     else {
       const unknown = list.filter((e) => !(ENGINE_IDS as readonly string[]).includes(e));
+      // An empty list is allowed: it is where a fresh install starts.
       if (unknown.length) errors.engines = `Not an engine: ${unknown.join(", ")}`;
-      else if (list.length === 0) errors.engines = "Leave at least one engine enabled";
       else next.engines.enabled = list as Config["engines"]["enabled"];
     }
   }
