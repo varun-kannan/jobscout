@@ -9,6 +9,7 @@
  */
 
 import {
+  BoardErrors,
   asArray,
   clean,
   htmlToText,
@@ -46,11 +47,12 @@ export const greenhouse: Engine = {
   ready(ctx) {
     return ctx.boards.length > 0
       ? READY
-      : notReady("no Greenhouse boards known yet — add some with `jobscout boards`");
+      : notReady("no Greenhouse boards known yet; add some with `jobscout boards`");
   },
 
   async fetch(ctx: EngineContext): Promise<RawJob[]> {
     const results: RawJob[] = [];
+    const errors = new BoardErrors(ctx.boards.length);
 
     for (const board of ctx.boards) {
       // content=true asks for the full posting body rather than titles alone.
@@ -58,7 +60,13 @@ export const greenhouse: Engine = {
         board.token,
       )}/jobs?content=true`;
 
-      const data = await ctx.http.json<GreenhouseResponse>(url, { signal: ctx.signal });
+      let data: GreenhouseResponse;
+      try {
+        data = await ctx.http.json<GreenhouseResponse>(url, { signal: ctx.signal });
+      } catch (err) {
+        errors.record(err);
+        continue;
+      }
       if (!data?.jobs?.length) continue;
 
       for (const job of asArray<GreenhouseJob>(data.jobs)) {
@@ -82,6 +90,7 @@ export const greenhouse: Engine = {
       }
     }
 
+    errors.throwIfAllFailed();
     return results;
   },
 };

@@ -2,13 +2,14 @@
  * Lever job boards.
  *
  * Keyless, one request per company, and it returns a plain-text description
- * alongside the HTML — so no unescaping guesswork. Notably good India coverage:
+ * alongside the HTML, so no unescaping guesswork. Notably good India coverage:
  * Meesho and CRED both resolve here.
  *
  * Docs: https://github.com/lever/postings-api
  */
 
 import {
+  BoardErrors,
   clean,
   htmlToText,
   looksRemote,
@@ -46,18 +47,25 @@ export const lever: Engine = {
   ready(ctx) {
     return ctx.boards.length > 0
       ? READY
-      : notReady("no Lever boards known yet — add some with `jobscout boards`");
+      : notReady("no Lever boards known yet; add some with `jobscout boards`");
   },
 
   async fetch(ctx: EngineContext): Promise<RawJob[]> {
     const results: RawJob[] = [];
+    const errors = new BoardErrors(ctx.boards.length);
 
     for (const board of ctx.boards) {
       const url = `https://api.lever.co/v0/postings/${encodeURIComponent(
         board.token,
       )}?mode=json`;
 
-      const data = await ctx.http.json<LeverPosting[]>(url, { signal: ctx.signal });
+      let data: LeverPosting[];
+      try {
+        data = await ctx.http.json<LeverPosting[]>(url, { signal: ctx.signal });
+      } catch (err) {
+        errors.record(err);
+        continue;
+      }
       // A token that does not exist returns an object, not an array.
       if (!Array.isArray(data)) continue;
 
@@ -85,6 +93,7 @@ export const lever: Engine = {
       }
     }
 
+    errors.throwIfAllFailed();
     return results;
   },
 };

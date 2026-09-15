@@ -84,25 +84,33 @@ const FIXTURES: Record<
   ashby: {
     board: { company: "Ramp", ats: "ashby", token: "ramp" },
     routes: {
-      "https://jobs.ashbyhq.com/api/non-user-graphql?op=ApiJobBoardWithTeams": {
-        data: {
-          jobBoard: {
-            jobPostings: [
-              {
-                id: "1515fe6d",
-                title: "Software Engineer, Platform",
-                locationName: "New York, NY",
-                employmentType: "FullTime",
-              },
-            ],
+      "https://api.ashbyhq.com/posting-api/job-board/ramp": {
+        apiVersion: "1",
+        jobs: [
+          {
+            id: "1515fe6d",
+            title: "Software Engineer, Platform",
+            location: "New York, NY",
+            secondaryLocations: [{ location: "Chennai" }],
+            isRemote: false,
+            isListed: true,
+            employmentType: "FullTime",
+            publishedAt: "2026-08-22T06:14:20.762+00:00",
+            descriptionHtml: "<p>Distributed systems work.</p>",
+            descriptionPlain: "Distributed systems work.",
+            jobUrl: "https://jobs.ashbyhq.com/ramp/1515fe6d",
           },
-        },
-      },
-      "https://jobs.ashbyhq.com/api/non-user-graphql?op=ApiJobPosting": {
-        data: { jobPosting: { descriptionHtml: "<p>Distributed systems work.</p>" } },
+        ],
       },
     },
-    expect: { nativeId: "1515fe6d", company: "Ramp", employmentType: "FullTime" },
+    expect: {
+      nativeId: "1515fe6d",
+      company: "Ramp",
+      employmentType: "FullTime",
+      location: "New York, NY; Chennai",
+      remote: false,
+      postedAt: "2026-08-22T06:14:20.762+00:00",
+    },
   },
 
   recruitee: {
@@ -268,7 +276,7 @@ const FIXTURES: Record<
             tags: ["golang", "AI/ML"],
             job_type: "full_time",
             publication_date: new Date().toISOString(),
-            // The field that states "remote, but…" as data rather than prose.
+            // The field that states "remote, but..." as data rather than prose.
             candidate_required_location: "USA",
             description: "<p>Build services.</p>",
           },
@@ -356,7 +364,7 @@ const FIXTURES: Record<
               "Spade | Backend Engineer | REMOTE (US/Can) | $170,000 - $240,000 + equity<p>Spade is the data platform for modern finance.",
           },
           {
-            // A reply, not a posting — must be ignored.
+            // A reply, not a posting: must be ignored.
             objectID: "49439144",
             parent_id: 49336502,
             story_id: 49156683,
@@ -445,7 +453,7 @@ const FIXTURES: Record<
           {
             id: "5123456",
             title: "Backend Engineer",
-            description: "Truncated snippet of the posting…",
+            description: "Truncated snippet of the posting...",
             redirect_url: "https://www.adzuna.in/land/ad/5123456",
             created: new Date().toISOString(),
             salary_min: 2000000,
@@ -495,7 +503,7 @@ const FIXTURES: Record<
             id: 9911,
             title: "Backend Engineer",
             location: "Chennai",
-            snippet: "Truncated description…",
+            snippet: "Truncated description...",
             link: "https://in.jooble.org/jdp/9911",
             company: "Acme",
             updated: "2026-08-21T00:00:00Z",
@@ -628,23 +636,78 @@ describe.each(Object.entries(FIXTURES))("engine: %s", (id, fixture) => {
   });
 });
 
-describe("ashby error handling", () => {
-  /**
-   * GraphQL reports failures as HTTP 200 with an errors array. Before this was
-   * handled, a rejected query looked identical to a board with no jobs — the
-   * exact broken-versus-empty confusion the run log exists to prevent.
-   */
-  test("surfaces a GraphQL error instead of reporting empty", async () => {
-    const ctx = contextWith(
-      {
-        "https://jobs.ashbyhq.com/api/non-user-graphql?op=ApiJobBoardWithTeams": {
-          errors: [{ message: 'Cannot query field "descriptionHtml"' }],
-        },
+describe("ashby", () => {
+  const board: Board = { company: "Ramp", ats: "ashby", token: "ramp" };
+
+  /** One request per board: the old engine sent one per posting and was rate limited. */
+  test("makes a single request per board", async () => {
+    const seen: string[] = [];
+    const routes = FIXTURES.ashby!.routes;
+    const ctx = contextWith(routes, [board]);
+    const inner = ctx.http;
+    ctx.http = {
+      json: async <T>(url: string, options?: object) => {
+        seen.push(url);
+        return inner.json<T>(url, options as never);
       },
-      [{ company: "Ramp", ats: "ashby", token: "ramp" }],
-    );
-    await expect(getEngine("ashby")!.fetch(ctx)).rejects.toThrow(/descriptionHtml/);
+      text: inner.text,
+    };
+    await getEngine("ashby")!.fetch(ctx);
+    expect(seen).toEqual(["https://api.ashbyhq.com/posting-api/job-board/ramp"]);
   });
+
+  test("skips postings the board has unlisted", async () => {
+    const ctx = contextWith(
+      { "https://api.ashbyhq.com/posting-api/job-board/ramp": { jobs: [
+        { id: "a", title: "Listed", isListed: true, jobUrl: "https://jobs.ashbyhq.com/ramp/a" },
+        { id: "b", title: "Hidden", isListed: false, jobUrl: "https://jobs.ashbyhq.com/ramp/b" },
+      ] } },
+      [board],
+    );
+    const jobs = await getEngine("ashby")!.fetch(ctx);
+    expect(jobs.map((j) => j.nativeId)).toEqual(["a"]);
+  });
+});
+
+describe("one failing board", () => {
+  /**
+   * A renamed or rate-limited board used to throw out of the engine and lose
+   * every other board in the run. The stub answers unknown URLs with a 404.
+   */
+  const cases: Array<[string, Board, Board, Record<string, unknown>]> = [
+    ["greenhouse",
+      { company: "Stripe", ats: "greenhouse", token: "stripe" },
+      { company: "Gone", ats: "greenhouse", token: "gone" },
+      FIXTURES.greenhouse!.routes],
+    ["lever",
+      { company: "Meesho", ats: "lever", token: "meesho" },
+      { company: "Gone", ats: "lever", token: "gone" },
+      FIXTURES.lever!.routes],
+    ["ashby",
+      { company: "Ramp", ats: "ashby", token: "ramp" },
+      { company: "Gone", ats: "ashby", token: "gone" },
+      FIXTURES.ashby!.routes],
+    ["recruitee",
+      { company: "Hygraph", ats: "recruitee", token: "hygraph" },
+      { company: "Gone", ats: "recruitee", token: "gone" },
+      FIXTURES.recruitee!.routes],
+    ["workable",
+      FIXTURES.workable!.board,
+      { company: "Gone", ats: "workable", token: "gone" },
+      FIXTURES.workable!.routes],
+  ];
+
+  for (const [id, good, bad, routes] of cases) {
+    test(`${id} keeps the other boards' jobs`, async () => {
+      const jobs = await getEngine(id as never)!.fetch(contextWith(routes, [bad, good]));
+      expect(jobs.length).toBeGreaterThan(0);
+    });
+
+    /** An outage must still read as an error, not as an empty board. */
+    test(`${id} still fails when every board fails`, async () => {
+      await expect(getEngine(id as never)!.fetch(contextWith({}, [bad]))).rejects.toThrow();
+    });
+  }
 });
 
 describe("runEngines", () => {

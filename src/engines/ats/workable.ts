@@ -9,6 +9,7 @@
  */
 
 import {
+  BoardErrors,
   asArray,
   clean,
   htmlToText,
@@ -62,18 +63,25 @@ export const workable: Engine = {
   ready(ctx) {
     return ctx.boards.length > 0
       ? READY
-      : notReady("no Workable boards known yet — add some with `jobscout boards`");
+      : notReady("no Workable boards known yet; add some with `jobscout boards`");
   },
 
   async fetch(ctx: EngineContext): Promise<RawJob[]> {
     const results: RawJob[] = [];
+    const errors = new BoardErrors(ctx.boards.length);
 
     for (const board of ctx.boards) {
       const url = `https://apply.workable.com/api/v1/widget/accounts/${encodeURIComponent(
         board.token,
       )}?details=true`;
 
-      const data = await ctx.http.json<WorkableResponse>(url, { signal: ctx.signal });
+      let data: WorkableResponse;
+      try {
+        data = await ctx.http.json<WorkableResponse>(url, { signal: ctx.signal });
+      } catch (err) {
+        errors.record(err);
+        continue;
+      }
       if (!data?.jobs?.length) continue;
 
       for (const job of asArray<WorkableJob>(data.jobs)) {
@@ -107,6 +115,7 @@ export const workable: Engine = {
       }
     }
 
+    errors.throwIfAllFailed();
     return results;
   },
 };

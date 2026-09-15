@@ -4,7 +4,7 @@
  * An engine does exactly one thing: retrieve records and hand them back. It
  * makes no judgements, writes nothing to the database, and knows nothing about
  * scoring or matching. That separation is what makes a broken source a source
- * bug rather than a mysterious pipeline failure — and it is why every engine
+ * bug rather than a mysterious pipeline failure, and it is why every engine
  * can be tested against a recorded response with no other machinery present.
  */
 
@@ -20,8 +20,8 @@ export type EngineFamily = "ats" | "board" | "india" | "inbox" | "aggregator" | 
  * Declared per engine rather than discovered per job, because it is a fixed
  * property of the source and downstream stages need to plan around it:
  *
- *   full     the whole posting — matching and drafting both work
- *   snippet  a truncated teaser — aggregators, by design
+ *   full     the whole posting; matching and drafting both work
+ *   snippet  a truncated teaser (aggregators, by design)
  *   none     no body at all; Foundit returns skills instead
  *
  * Anything below `full` is what the enrichment relay looks for when deciding
@@ -108,11 +108,35 @@ export function notReady(reason: string): Readiness {
  * Coerce a payload field into an array.
  *
  * `value ?? []` only guards against null; a source returning an object where an
- * array was expected — an error envelope, a shape change — then crashes the
+ * array was expected (an error envelope, a shape change) then crashes the
  * engine with "is not iterable" rather than reporting an empty result.
  */
 export function asArray<T>(value: unknown): T[] {
   return Array.isArray(value) ? (value as T[]) : [];
+}
+
+/**
+ * Boards that failed during one engine run.
+ *
+ * A renamed, deleted or rate-limited board used to throw out of the engine and
+ * lose every other board's jobs from the same run. Engines now record the
+ * failure and move on. Only when every board fails is the error rethrown, so a
+ * platform outage still reports as an error rather than as an empty result.
+ */
+export class BoardErrors {
+  private failed = 0;
+  private first: unknown = undefined;
+
+  constructor(private readonly total: number) {}
+
+  record(err: unknown): void {
+    if (this.failed === 0) this.first = err;
+    this.failed++;
+  }
+
+  throwIfAllFailed(): void {
+    if (this.total > 0 && this.failed === this.total) throw this.first;
+  }
 }
 
 /** Trim, collapse whitespace, and turn null-ish values into "". */
@@ -123,7 +147,7 @@ export function clean(value: unknown): string {
   return text.replace(/\s+/g, " ").trim();
 }
 
-/** Strip HTML to readable text — most ATS platforms return HTML descriptions. */
+/** Strip HTML to readable text; most ATS platforms return HTML descriptions. */
 export function htmlToText(html: string): string {
   if (!html) return "";
   return html

@@ -113,6 +113,66 @@ describe("upsertJobs", () => {
     handle.close();
   });
 
+  /** Only last_seen used to change, so an engine that improved could not fix old rows. */
+  describe("on a repeat sighting", () => {
+    const row = (h: ReturnType<typeof db>) =>
+      h.raw.query<{ location: string; posted_at: string | null; apply_url: string;
+                    description: string; description_complete: number }, []>(
+        `SELECT location, posted_at, apply_url, description, description_complete FROM jobs`,
+      ).get()!;
+
+    test("fills in a date the first sighting lacked", () => {
+      const h = db();
+      upsertJobs(h.raw, "ashby", [job({ postedAt: null })]);
+      upsertJobs(h.raw, "ashby", [job({ postedAt: "2026-08-22T06:14:20.762Z" })]);
+      expect(row(h).posted_at).toBe("2026-08-22T06:14:20.762Z");
+    });
+
+    test("does not move a date it already has", () => {
+      const h = db();
+      upsertJobs(h.raw, "ashby", [job({ postedAt: "2026-08-01T00:00:00.000Z" })]);
+      upsertJobs(h.raw, "ashby", [job({ postedAt: "2026-09-01T00:00:00.000Z" })]);
+      expect(row(h).posted_at).toBe("2026-08-01T00:00:00.000Z");
+    });
+
+    test("takes a fuller location from the engine, but not a blank one", () => {
+      const h = db();
+      upsertJobs(h.raw, "ashby", [job({ location: "Bangalore" })]);
+      upsertJobs(h.raw, "ashby", [job({ location: "Bangalore; Chennai" })]);
+      expect(row(h).location).toBe("Bangalore; Chennai");
+      upsertJobs(h.raw, "ashby", [job({ location: "" })]);
+      expect(row(h).location).toBe("Bangalore; Chennai");
+    });
+
+    test("fills an empty apply URL and keeps an existing one", () => {
+      const h = db();
+      upsertJobs(h.raw, "foundit", [job({ applyUrl: "" })]);
+      upsertJobs(h.raw, "foundit", [job({ applyUrl: "https://a.example/1" })]);
+      expect(row(h).apply_url).toBe("https://a.example/1");
+      upsertJobs(h.raw, "foundit", [job({ applyUrl: "https://b.example/1" })]);
+      expect(row(h).apply_url).toBe("https://a.example/1");
+    });
+
+    /** Enrich writes full descriptions; a later snippet must not undo that. */
+    test("upgrades an incomplete description but never downgrades a complete one", () => {
+      const h = db();
+      upsertJobs(h.raw, "adzuna", [job({ description: "Short...", descriptionComplete: false })]);
+      upsertJobs(h.raw, "adzuna", [job({ description: "The whole posting.", descriptionComplete: true })]);
+      expect(row(h)).toMatchObject({ description: "The whole posting.", description_complete: 1 });
+
+      upsertJobs(h.raw, "adzuna", [job({ description: "Short again...", descriptionComplete: false })]);
+      expect(row(h)).toMatchObject({ description: "The whole posting.", description_complete: 1 });
+    });
+
+    test("leaves a description enrich completed when the engine still sends a snippet", () => {
+      const h = db();
+      upsertJobs(h.raw, "adzuna", [job({ description: "Short...", descriptionComplete: false })]);
+      h.raw.run(`UPDATE jobs SET description = 'Enriched body', description_complete = 1`);
+      upsertJobs(h.raw, "adzuna", [job({ description: "Short...", descriptionComplete: false })]);
+      expect(row(h)).toMatchObject({ description: "Enriched body", description_complete: 1 });
+    });
+  });
+
   test("stores a null remote as null rather than 0", () => {
     const handle = db();
     upsertJobs(handle.raw, "lever", [job({ remote: null })]);

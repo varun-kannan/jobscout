@@ -61,7 +61,19 @@ export function upsertJobs(db: Database, engine: string, jobs: RawJob[]): Upsert
       $salary_min, $salary_max, $salary_currency, $salary_period,
       $employment_type, $posted_at, $first_seen, $last_seen, $raw
     )
-    ON CONFLICT(id) DO UPDATE SET last_seen = excluded.last_seen
+    -- A repeat sighting refreshes what the engine owns and fills gaps, but never
+    -- replaces something better. Other stages write description (enrich),
+    -- remote and salary (normalise), so those are only upgraded, not overwritten.
+    -- Before this, only last_seen changed, so an engine that started returning
+    -- dates or fuller locations could never improve jobs it had already stored.
+    ON CONFLICT(id) DO UPDATE SET
+      last_seen = excluded.last_seen,
+      location = CASE WHEN excluded.location <> '' THEN excluded.location ELSE jobs.location END,
+      posted_at = COALESCE(jobs.posted_at, excluded.posted_at),
+      apply_url = CASE WHEN COALESCE(jobs.apply_url, '') = '' THEN excluded.apply_url ELSE jobs.apply_url END,
+      description = CASE WHEN jobs.description_complete = 0 AND excluded.description_complete = 1
+                         THEN excluded.description ELSE jobs.description END,
+      description_complete = MAX(jobs.description_complete, excluded.description_complete)
   `);
 
   const existing = db.prepare<{ id: string }, [string]>(`SELECT id FROM jobs WHERE id = ?`);

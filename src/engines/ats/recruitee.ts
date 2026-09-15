@@ -7,6 +7,7 @@
  */
 
 import {
+  BoardErrors,
   asArray,
   clean,
   htmlToText,
@@ -59,15 +60,22 @@ export const recruitee: Engine = {
   ready(ctx) {
     return ctx.boards.length > 0
       ? READY
-      : notReady("no Recruitee boards known yet — add some with `jobscout boards`");
+      : notReady("no Recruitee boards known yet; add some with `jobscout boards`");
   },
 
   async fetch(ctx: EngineContext): Promise<RawJob[]> {
     const results: RawJob[] = [];
+    const errors = new BoardErrors(ctx.boards.length);
 
     for (const board of ctx.boards) {
       const url = `https://${encodeURIComponent(board.token)}.recruitee.com/api/offers/`;
-      const data = await ctx.http.json<RecruiteeResponse>(url, { signal: ctx.signal });
+      let data: RecruiteeResponse;
+      try {
+        data = await ctx.http.json<RecruiteeResponse>(url, { signal: ctx.signal });
+      } catch (err) {
+        errors.record(err);
+        continue;
+      }
       if (!data?.offers?.length) continue;
 
       for (const offer of asArray<RecruiteeOffer>(data.offers)) {
@@ -98,6 +106,7 @@ export const recruitee: Engine = {
       }
     }
 
+    errors.throwIfAllFailed();
     return results;
   },
 };
