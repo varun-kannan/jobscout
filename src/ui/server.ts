@@ -31,6 +31,11 @@ import { applySettings, settingsOptions } from "./settings.ts";
 import { probeBackends } from "../setup/ai-setup.ts";
 import { loadSecrets } from "../config/load.ts";
 import { rankAll } from "../skills/rank.ts";
+import { discoverJobs } from "../pipeline/discover.ts";
+import { DiscoveryJob } from "./discovery-job.ts";
+import { engineHealth, lastDiscoveryAt } from "../engines/health.ts";
+import { activeBoards } from "../db/jobs.ts";
+import { pythonCheck } from "../setup/checks/engines.ts";
 import { classifyCompany, COMPANY_TYPES } from "../signals/company-type.ts";
 import {
   countJobs,
@@ -130,6 +135,14 @@ export function createServer(options: UiOptions): { url: string; stop(): void } 
 
   const setStatus = db.prepare(`UPDATE jobs SET review_status = ? WHERE id = ?`);
 
+  // Config and secrets are read when a pass starts, not when the server did,
+  // so a key added in the meantime is used.
+  const discovery = new DiscoveryJob(
+    async (onFinish) =>
+      discoverJobs({ db, config, secrets: await loadSecrets(paths), onFinish }),
+    () => rankAll(db, config, { onlyNew: true }).ranked,
+  );
+
   const server = Bun.serve({
     // Loopback only. This exposes an unauthenticated view of your job search
     // and résumé-derived profile; binding 0.0.0.0 would put it on the network.
@@ -225,6 +238,33 @@ export function createServer(options: UiOptions): { url: string; stop(): void } 
         if (!getJob(db, id)) return json({ error: "No such job" }, 404);
         setStatus.run(status, id);
         return json({ id, status });
+      }
+
+      if (pathname === "/api/engines") {
+        return json({
+          lastDiscoveryAt: lastDiscoveryAt(db),
+          engines: await engineHealth({
+            db,
+            config,
+            secrets: await loadSecrets(paths),
+            boards: activeBoards(db),
+            pythonStatus: async () => {
+              const result = await pythonCheck.run({} as never);
+              return {
+                ok: result.state === "ok",
+                reason: `${result.summary}; JobSpy needs Python 3.10 or newer`,
+              };
+            },
+          }),
+        });
+      }
+
+      if (pathname === "/api/discover") {
+        if (request.method === "POST") {
+          const started = discovery.start();
+          return json({ started, state: discovery.state() }, started ? 202 : 409);
+        }
+        return json(discovery.state());
       }
 
       if (pathname === "/api/providers") {

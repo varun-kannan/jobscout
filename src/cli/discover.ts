@@ -2,10 +2,9 @@ import { defineCommand } from "citty";
 import { getPaths } from "../config/paths.ts";
 import { loadConfigOrDefault, loadSecrets } from "../config/load.ts";
 import { openAndMigrate } from "../db/db.ts";
-import { activeBoards, recordRun, upsertJobs } from "../db/jobs.ts";
-import { createHttpClient } from "../engines/http.ts";
-import { implementedEngines, runEngines, type EngineRun } from "../engines/registry.ts";
-import type { EngineId } from "../config/schema.ts";
+import { activeBoards } from "../db/jobs.ts";
+import { implementedEngines, type EngineRun } from "../engines/registry.ts";
+import { discoverJobs } from "../pipeline/discover.ts";
 import { c, hint, line, pad, sym } from "../output/theme.ts";
 
 function statusMark(run: EngineRun): string {
@@ -43,57 +42,33 @@ export const discoverCommand = defineCommand({
     const db = await openAndMigrate(paths.db);
 
     try {
-      const implemented = new Set(implementedEngines());
+      const implemented = new Set<string>(implementedEngines());
       const requested = args.engine
         ? String(args.engine)
             .split(",")
             .map((s) => s.trim())
             .filter(Boolean)
         : config.engines.enabled;
+      const runnable = requested.filter((id) => implemented.has(id));
 
-      const engines = requested.filter((id): id is EngineId =>
-        implemented.has(id as EngineId),
-      );
-      const notYetBuilt = requested.filter((id) => !implemented.has(id as EngineId));
-
-      if (engines.length === 0) {
+      if (runnable.length === 0) {
         line(c.yellow("No runnable engines enabled."));
-        if (notYetBuilt.length) {
-          line(hint(`Not built yet: ${notYetBuilt.join(", ")}`));
-        }
+        const notBuilt = requested.filter((id) => !implemented.has(id));
+        if (notBuilt.length) line(hint(`Not built yet: ${notBuilt.join(", ")}`));
         process.exitCode = 1;
         return;
       }
 
-      const boards = activeBoards(db.raw);
       line();
-      line(c.dim(`Discovering across ${engines.length} engine(s), ${boards.length} board(s)…`));
+      line(c.dim(`Discovering across ${runnable.length} engine(s), ${activeBoards(db.raw).length} board(s)...`));
       line();
 
-      const http = createHttpClient();
-      let totalFetched = 0;
-      let totalInserted = 0;
-
-      const runs = await runEngines({
-        engines,
-        boards,
-        http,
+      const result = await discoverJobs({
+        db: db.raw,
         config,
         secrets,
-        query: {
-          terms: config.search.roles,
-          locations: config.search.locations,
-          remoteOnly: config.search.remoteOnly,
-          maxAgeDays: 30,
-        },
-        onFinish(run) {
-          // Persist as each engine lands, so a later crash cannot lose work
-          // that already succeeded.
-          const { inserted } = upsertJobs(db.raw, run.engine, run.jobs);
-          recordRun(db.raw, run, inserted);
-          totalFetched += run.fetched;
-          totalInserted += inserted;
-
+        engines: requested,
+        onFinish(run, inserted) {
           const detail =
             run.status === "ok"
               ? `${String(run.fetched).padStart(4)} fetched  ${String(inserted).padStart(3)} new`
@@ -105,13 +80,13 @@ export const discoverCommand = defineCommand({
       });
 
       line();
-      const failed = runs.filter((r) => r.status === "error" || r.status === "rate_limited");
+      const failed = result.runs.filter((r) => r.status === "error" || r.status === "rate_limited");
       line(
-        `  ${c.bold(String(totalInserted))} new posting(s) from ${totalFetched} fetched` +
-          (failed.length ? c.red(`  ·  ${failed.length} engine(s) failed`) : ""),
+        `  ${c.bold(String(result.inserted))} new posting(s) from ${result.fetched} fetched` +
+          (failed.length ? c.red(`  |  ${failed.length} engine(s) failed`) : ""),
       );
-      if (notYetBuilt.length) {
-        line(hint(`  Not built yet: ${notYetBuilt.join(", ")}`));
+      if (result.notBuilt.length) {
+        line(hint(`  Not built yet: ${result.notBuilt.join(", ")}`));
       }
       line();
     } finally {

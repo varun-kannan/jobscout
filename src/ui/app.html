@@ -242,6 +242,15 @@
   .link { background: none; border: 0; color: var(--muted); cursor: pointer; font: inherit; font-size: 12px; padding: 2px 4px; }
   .link:hover { color: var(--ink); text-decoration: underline; }
 
+  .age-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+    padding: 10px 22px; border-bottom: 1px solid var(--line); font-size: 13px; }
+  .age-bar:empty { display: none; }
+  #view-dash .age-bar { border: 1px solid var(--line); border-radius: 8px; }
+  .age-bar .old { font-weight: 600; }
+  .age-bar .btn { padding: 5px 12px; }
+  .age-bar a { color: var(--muted); }
+  .blocked { color: var(--ink); font-weight: 600; }
+
   /* ── settings form ────────────────────────────────────────── */
   .form { display: grid; grid-template-columns: 170px minmax(0, 1fr); gap: 12px 20px; align-items: start; }
   .form label { color: var(--muted); font-size: 13px; padding-top: 7px; }
@@ -301,6 +310,7 @@
 
 <main>
   <div class="view" id="view-jobs">
+    <div class="age-bar" data-age></div>
     <div id="stale-banner"></div>
     <div class="filters">
       <input type="search" id="f-q" placeholder="Search company, title or location...">
@@ -367,6 +377,7 @@
   </div>
 
   <div class="view pad" id="view-dash" hidden>
+    <div class="age-bar" data-age style="margin:0 0 18px"></div>
     <div id="coverage-note"></div>
     <div class="cards" id="dash-cards"></div>
     <section class="block"><h3>Engines</h3>
@@ -617,14 +628,26 @@ async function loadDashboard() {
     + `<div class="card"><b class="num">${(d.liveness.closed + d.liveness.gone).toLocaleString()}</b><span>Closed</span></div>`
     + `<div class="card"><b class="num">${d.liveness.unchecked.toLocaleString()}</b><span>Unchecked</span></div>`;
 
+  const health = await (await fetch("/api/engines")).json();
+  const order = (e) => (e.enabled ? (e.ready ? 1 : 0) : 2);
+  const rows = [...health.engines].sort((a, b) => order(a) - order(b) || b.jobs - a.jobs);
   $("engine-table").innerHTML =
-    `<thead><tr><th>Engine</th><th>Status</th><th>Jobs</th><th>Last run</th></tr></thead><tbody>` +
-    d.engines.map((e) => `<tr>
-      <td>${esc(e.engine)}</td>
-      <td>${e.status === "ok" ? "ok" : `<b>${esc(e.status)}</b>`}</td>
-      <td class="num">${e.jobs.toLocaleString()}</td>
-      <td style="color:var(--faint)">${esc((e.lastRun || "").replace("T", " ").slice(0, 16) || "\u2014")}</td>
-    </tr>`).join("") + "</tbody>";
+    `<thead><tr><th>Engine</th><th>Can run?</th><th>Last run</th><th>Fetched / new</th><th>Jobs stored</th></tr></thead><tbody>` +
+    rows.map((e) => {
+      const state = !e.enabled ? '<span style="color:var(--faint)">off</span>'
+        : e.ready ? "ready"
+        : `<span class="blocked">blocked</span><div class="ti">${esc(e.blockedBy || "")}</div>`;
+      const r = e.lastRun;
+      const last = !r ? '<span style="color:var(--faint)">never</span>'
+        : `${r.status === "ok" ? "ok" : `<b>${esc(r.status)}</b>`} <span style="color:var(--faint)">${esc(postedAgo(r.startedAt))}</span>`
+          + (r.error && r.status !== "skipped" ? `<div class="ti">${esc(r.error.slice(0, 80))}</div>` : "");
+      return `<tr>
+        <td>${esc(e.id)}</td><td>${state}</td><td>${last}</td>
+        <td class="num">${r ? `${r.fetched.toLocaleString()} / ${r.inserted.toLocaleString()}` : "\u2014"}</td>
+        <td class="num">${e.jobs.toLocaleString()}</td>
+      </tr>`;
+    }).join("") + "</tbody>";
+  renderDataAge(health);
 }
 
 /* ── staleness ──────────────────────────────────────────
@@ -964,8 +987,93 @@ $("save-settings").addEventListener("click", async () => {
   loadJobs();
 });
 
+/* ── data age and discovery ─────────────────────────────
+ * A list with no date on it looks current even when it is days old, so the age
+ * of the data is shown wherever the jobs are, with a way to refresh it.
+ */
+let engineState = null;
+let pollTimer = null;
+
+function renderDataAge(health, job) {
+  if (health) engineState = health;
+  const bars = document.querySelectorAll("[data-age]");
+  if (!engineState) return;
+
+  const enabled = engineState.engines.filter((e) => e.enabled);
+  const blocked = enabled.filter((e) => !e.ready);
+  const blockedNote = blocked.length
+    ? ` <a href="#" data-goto-dash>${blocked.length} enabled engine${blocked.length === 1 ? "" : "s"} cannot run</a>`
+    : "";
+
+  let html;
+  if (job && job.running) {
+    // Blocked engines still report back (as skipped), so they count as done.
+    const done = job.engines.length;
+    html = `<span class="spin"></span> Discovering: ${done} of ${enabled.length} engines done,
+      ${job.inserted.toLocaleString()} new so far`;
+  } else {
+    const at = engineState.lastDiscoveryAt;
+    const hours = at ? (Date.now() - Date.parse(at)) / 3600000 : Infinity;
+    const age = !at ? "Jobs have never been fetched."
+      : `Jobs last fetched ${postedAgo(at)}.`;
+    let result = "";
+    if (job && job.finishedAt) {
+      const failed = job.engines.filter((e) => e.status === "error" || e.status === "rate_limited");
+      result = job.error
+        ? ` Last pass failed: ${esc(job.error)}.`
+        : ` Last pass: ${job.inserted.toLocaleString()} new from ${job.fetched.toLocaleString()} fetched`
+          + (job.ranked !== null ? `, ${job.ranked.toLocaleString()} ranked` : "")
+          + (failed.length ? `; ${failed.map((e) => esc(e.engine)).join(", ")} failed` : "") + ".";
+    }
+    html = `<span class="${hours > 24 ? "old" : ""}">${age}</span>${result}
+      <button class="btn" data-discover>Discover now</button>${blockedNote}`;
+  }
+
+  bars.forEach((bar) => {
+    bar.innerHTML = html;
+    const button = bar.querySelector("[data-discover]");
+    if (button) button.addEventListener("click", startDiscovery);
+    const goto = bar.querySelector("[data-goto-dash]");
+    if (goto) goto.addEventListener("click", (e) => {
+      e.preventDefault();
+      document.querySelector('nav button[data-view="dash"]').click();
+    });
+  });
+}
+
+async function startDiscovery() {
+  const res = await fetch("/api/discover", { method: "POST" });
+  const d = await res.json();
+  renderDataAge(null, d.state);
+  pollDiscovery();
+}
+
+function pollDiscovery() {
+  clearTimeout(pollTimer);
+  pollTimer = setTimeout(async () => {
+    const job = await (await fetch("/api/discover")).json();
+    if (job.running) {
+      renderDataAge(null, job);
+      pollDiscovery();
+      return;
+    }
+    // Finished: everything on screen is now out of date.
+    const health = await (await fetch("/api/engines")).json();
+    renderDataAge(health, job);
+    await refreshFreshness();
+    await loadJobs();
+    if (!$("view-dash").hidden) loadDashboard();
+  }, 2000);
+}
+
 (async function start() {
   const d = await refreshFreshness();
+  const [health, job] = await Promise.all([
+    (await fetch("/api/engines")).json(),
+    (await fetch("/api/discover")).json(),
+  ]);
+  renderDataAge(health, job);
+  if (job.running) pollDiscovery();
   $("subtitle").textContent =
     `${d.jobs.toLocaleString()} jobs \u00b7 ${d.companies.toLocaleString()} companies`;
   await loadJobs();
